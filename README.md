@@ -1,4 +1,4 @@
-# YV-isoTPS
+# YB-isoTPS
 ## Contents
 This project implements isometric tensor network (isoTPS) algorithms for computing properties of two-dimensional quantum lattice models. 
 Isometric tensor networks [[1]](#1)[[2]](#2) generalize the isometry condition of the popular Matrix Product States [[3]](#3) to two and higher dimensions.
