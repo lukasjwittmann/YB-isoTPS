@@ -67,7 +67,7 @@ class isoTPS_Square(isoTPS.isoTPS):
         if self.debug_dict is not None:
             self.debug_dict["debug_level"] = self.debug_level
 
-    def plot(self, T_colors=None, ax=None, figsize_y=8.0, T_tensor_scale=1.0, show_bond_dims=True):
+    def plot(self, T_colors=None, ax=None, figsize_y=8.0, T_tensor_scale=1.0, W_tensor_scale=1.0, show_bond_dims=True):
         """
         Plots the isoTPS, labeling each leg with its respective bond dimension.
         
@@ -83,6 +83,8 @@ class isoTPS_Square(isoTPS.isoTPS):
             the size of the figure in y direction. Default: 8.0.
         T_tensor_scale : float, optional
             size multiplier for T tensors. Default: 1.0
+        W_tensor_scale : float, optional
+            size multiplier for W tensors. Default: 1.0
         show_bond_dims : boolean, optional
             wether to draw the bond dimensions next to the legs. Default: True.
         """
@@ -205,9 +207,9 @@ class isoTPS_Square(isoTPS.isoTPS):
         # Draw actual W tensors
         for y in range(2 * self.Ly - 1):
             if y == self.ortho_center:
-                ax.add_patch(plt.Circle((self.ortho_surface + 0.5, y + 0.5), 0.06, color="orange"))
+                ax.add_patch(plt.Circle((self.ortho_surface + 0.5, y + 0.5), 0.06*W_tensor_scale, color="orange"))
             else:            
-                ax.add_patch(plt.Circle((self.ortho_surface + 0.5, y + 0.5), 0.06, color="red"))
+                ax.add_patch(plt.Circle((self.ortho_surface + 0.5, y + 0.5), 0.06*W_tensor_scale, color="red"))
     
     def check_isometry_condition(self):
         """
