@@ -16,4 +16,4 @@ Sheng-Hsuan Lin, Michael P. Zaletel and Frank Pollmann. ‘Efficient simulation 
 <a id="3">[3]</a> 
 Ulrich Schollwöck. ‘The density-matrix renormalization group in the age of matrix product states’. In: Annals of physics 326.1 (2011), pp. 96–192. <br />
 <a id="4">[4]</a> 
-https://github.com/SnackerBit/master-thesis-physics/blob/main/thesis/thesis.pdf <br />
+https://github.com/SnackerBit/masters-thesis-physics/blob/main/thesis/thesis.pdf <br />
