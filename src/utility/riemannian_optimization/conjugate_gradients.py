@@ -345,7 +345,7 @@ class ConjugateGradientsOptimizer:
             # This probably means that the stepsize is quite small and we can speed up
             return step_size, new_iterate, new_cost, 2*alpha
 
-    def optimize(self, initial_iterate, log_debug_info=False):
+    def optimize(self, initial_iterate, log_debug_info=False, log_iterates=False):
         """
         Optimizes the given initial iterate with the Conjugate Gradients algorithm.
 
@@ -354,8 +354,9 @@ class ConjugateGradientsOptimizer:
         initial_iterate : instance of iterate class
             the initial iterate
         log_debug_info : bool, optional
-            wether to store and return per-iteration debug information (the iterates, costs and step sizes).
-            Default: False
+            wether to store and return per-iteration debug information (costs and step sizes). Default: False.
+        log_iterates : bool, optional
+            wether to store and return all iterates. Default: False.
 
         Returns
         -------
@@ -367,9 +368,10 @@ class ConjugateGradientsOptimizer:
             number of restarts due to the search direction not being a descent direction
         num_restarts_powell : int
             number of restarts due to Powell's restart strategy (see [5])
-        debug_info : tuple or None
-            tuple with debug information, containing three lists: A list of iterates (np.ndarray), a list of costs (float), 
-            and a list of step sizes (float). If log_debug_info == False, None is returned instead.
+        debug_info : tuple
+            tuple with debug information, containing three lists: A list of costs (float), a list of step sizes (float),
+            and list of iterates (np.ndarray). If log_debug_info == False or log_iterates == False, the corresponding
+            entries in the tuple are None.
         """
         # Initital values
         iterate = initial_iterate
@@ -380,17 +382,18 @@ class ConjugateGradientsOptimizer:
         # Keep track of the number of CG restarts
         num_restarts_not_descent = 0
         num_restarts_powell = 0
-        # Keep track of iterates
+        # Debug logging
+        costs = None
+        step_sizes = None
+        iterates = None
         if log_debug_info:
-            iterates = [initial_iterate.get_iterate()]
             costs = [cost]
             step_sizes = []
+        if log_iterates:
+            iterates = [initial_iterate.get_iterate()]
         if self.manifold.norm(gradient) < self.grad_norm_eps:
             # Termination because of small gradient
-            if log_debug_info:
-                return iterate.get_iterate(), 0, num_restarts_not_descent, num_restarts_powell, (iterates, costs, step_sizes)
-            else:
-                return iterate.get_iterate(), 0, num_restarts_not_descent, num_restarts_powell, None
+            return iterate.get_iterate(), 0, num_restarts_not_descent, num_restarts_powell, (costs, step_sizes, iterates)
         old_alpha = None
         # Main loop
         n = 0
@@ -409,9 +412,10 @@ class ConjugateGradientsOptimizer:
                 iterate = new_iterate
                 cost = new_cost
                 if log_debug_info:
-                    iterates.append(iterate.get_iterate())
                     costs.append(cost)
                     step_sizes.append(step_size)
+                if log_iterates:
+                    iterates.append(iterate.get_iterate())
                 break
             # Compute new gradient and beta
             new_gradient = new_iterate.compute_gradient()
@@ -420,9 +424,10 @@ class ConjugateGradientsOptimizer:
                 iterate = new_iterate
                 cost = new_cost
                 if log_debug_info:
-                    iterates.append(iterate.get_iterate())
                     costs.append(cost)
                     step_sizes.append(step_size)
+                if log_iterates:
+                    iterates.append(iterate.get_iterate())
                 break
             # Check if we want to restart (Powell's restart strategy, see [5])
             transported_gradient = self.manifold.transport(new_iterate.get_iterate(), gradient)
@@ -443,10 +448,8 @@ class ConjugateGradientsOptimizer:
             iterate = new_iterate
             cost = new_cost
             if log_debug_info:
-                iterates.append(iterate.get_iterate())
                 costs.append(cost)
                 step_sizes.append(step_size)
-        if log_debug_info:
-            return iterate.get_iterate(), n, num_restarts_not_descent, num_restarts_powell, (iterates, costs, step_sizes)
-        else:
-            return iterate.get_iterate(), n, num_restarts_not_descent, num_restarts_powell, None
+            if log_iterates:
+                iterates.append(iterate.get_iterate())
+        return iterate.get_iterate(), n, num_restarts_not_descent, num_restarts_powell, (costs, step_sizes, iterates)

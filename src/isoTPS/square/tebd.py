@@ -1,7 +1,7 @@
 import numpy as np
 from ...utility import utility
 from ...utility.tripartite_decomposition import tripartite_decomposition as tripartite_decomposition_lib
-from ...utility import debug_levels
+from ...utility import debug_logging
 
 """
 This file implements the application of a two-site time evolution operator as used in TEBD for square isoTPS.
@@ -153,7 +153,7 @@ def _compute_error(T1, T2, Wm1, W, Wp1, T1_prime, T2_prime, Wm1_prime, W_prime, 
     error = 1 + temp - 2*np.real(_compute_overlap(T1, T2, Wm1, W, Wp1, T1_prime, T2_prime, Wm1_prime, W_prime, Wp1_prime, U))
     return np.real_if_close(np.sqrt(error))
 
-def tebd_step(T1, T2, Wm1, W, Wp1, U, chi_max, mode="svd", debug_dict=None, **kwargs):
+def tebd_step(T1, T2, Wm1, W, Wp1, U, chi_max, mode="svd", debug_logger=debug_logging.DebugLogger(), **kwargs):
     """
     Performs a single TEBD step by approximating the updated tensors of the two site wavefunction, after the time evolution operator
     U has been applied. the bond dimension of T tensors is kept the same. The bond dimension between W tensors is truncated
@@ -179,8 +179,8 @@ def tebd_step(T1, T2, Wm1, W, Wp1, U, chi_max, mode="svd", debug_dict=None, **kw
         selecting the tebd_step implementation that is called. Depending on the implementation,
         additional parameters may be needed, that get passed on through kwargs. See individual
         tebd_step implementations for more detail.
-    debug_dict : dictionary, optional
-        dictionary in which debug information is saved. Default: None.
+    debug_logger : DebugLogger instance, optional
+        DebugLogger instance managing debug logging. See 'src/utility/debug_logging.py' for more details.
     **kwargs :
         keyword arguments get passed on to the selected tebd_step implementation.
 
@@ -197,15 +197,15 @@ def tebd_step(T1, T2, Wm1, W, Wp1, U, chi_max, mode="svd", debug_dict=None, **kw
     Wp1_prime : np.ndarray of shape (lp1, up1, rp1, dp1') = (lp1, up1, lu2, u') or None
         part of the updated two-site wavefunction
     error : float
-        error of applying the time evolution operator, or -float("inf") if log_error is set to false.
+        error of applying the time evolution operator, or -float("inf") if debug_logging.log_local_tebd_update_errors is set to false.
     """
     if mode == "svd":
         T1_prime, T2_prime, Wm1_prime, W_prime, Wp1_prime = tebd_step_svd(T1, T2, Wm1, W, Wp1, U, chi_max, **kwargs)
     elif mode == "iterate_polar":
-        T1_prime, T2_prime, Wm1_prime, W_prime, Wp1_prime = tebd_step_iterate_polar(T1, T2, Wm1, W, Wp1, U, debug_dict=debug_dict, **kwargs)
+        T1_prime, T2_prime, Wm1_prime, W_prime, Wp1_prime = tebd_step_iterate_polar(T1, T2, Wm1, W, Wp1, U, debug_logger=debug_logger, **kwargs)
     else:
         raise NotImplementedError(f'tebd_step not implemented for mode {mode}')
-    if debug_levels.check_debug_level(debug_dict, debug_levels.DebugLevel.LOG_PER_SITE_ERROR_AND_WALLTIME):
+    if debug_logger.log_local_tebd_update_errors:
         error = _compute_error(T1, T2, Wm1, W, Wp1, T1_prime, T2_prime, Wm1_prime, W_prime, Wp1_prime, U)
         return T1_prime, T2_prime, Wm1_prime, W_prime, Wp1_prime, error
 
@@ -309,7 +309,7 @@ def tebd_step_svd(T1, T2, Wm1, W, Wp1, U, chi_max, **kwargs):
 
     return T1, T2, Wm1, W, Wp1
 
-def tebd_step_iterate_polar(T1, T2, Wm1, W, Wp1, U, N_iters=100, eps=1e-13, debug_dict=None):
+def tebd_step_iterate_polar(T1, T2, Wm1, W, Wp1, U, N_iters=100, eps=1e-13, debug_logger=debug_logging.DebugLogger()):
     """
     Computes the updated two-site wavefunction by iteratively optimizing the overlap
     with the original wavefunction with the time evolution operator applied, enforcing isometry
@@ -328,8 +328,8 @@ def tebd_step_iterate_polar(T1, T2, Wm1, W, Wp1, U, N_iters=100, eps=1e-13, debu
     eps: float, optional
         if the relative change in error is smaller than this eps, the algorithm
         is terminated.
-    debug_dict : dictionary, optional
-        dictionary in which debug information is saved. Default: None.
+    debug_logger : DebugLogger instance, optional
+        DebugLogger instance managing debug logging. See 'src/utility/debug_logging.py' for more details.
 
     Returns
     -------
@@ -599,8 +599,7 @@ def tebd_step_iterate_polar(T1, T2, Wm1, W, Wp1, U, N_iters=100, eps=1e-13, debu
         W_prime = _update_W(T1, T2, Wm1, W, Wp1, T1_prime, T2_prime, Wm1_prime, Wp1_prime, U)
         return T1_prime, T2_prime, Wm1_prime, W_prime, Wp1_prime
 
-    log_debug_info = debug_levels.check_debug_level(debug_dict, debug_levels.DebugLevel.LOG_PER_ITERATION_DEBUG_INFO_TEBD_UPDATE_STEP)
-    if log_debug_info:
+    if debug_logger.log_iterative_local_tebd_update_errors_per_iteration:
         errors = []
 
     T1_prime = T1.copy()
@@ -619,14 +618,15 @@ def tebd_step_iterate_polar(T1, T2, Wm1, W, Wp1, U, N_iters=100, eps=1e-13, debu
         T1_prime, T2_prime, Wm1_prime, W_prime, Wp1_prime = _update_tensors(T1, T2, Wm1, W, Wp1, T1_prime, T2_prime, Wm1_prime, W_prime, Wp1_prime, U)
         # Recompute error
         new_error = _compute_error(T1, T2, Wm1, W, Wp1, T1_prime, T2_prime, Wm1_prime, W_prime, Wp1_prime, U)
-        if log_debug_info:
+        if debug_logger.log_iterative_local_tebd_update_errors_per_iteration:
             errors.append(new_error)
         # Check stopping criterion
         if error == 0.0 or np.abs((error - new_error) / error) <= eps:
             num_iters = n + 1
             break
         error = new_error
-    if log_debug_info:
-        debug_dict["tebd_update_step_errors"] = errors
-        utility.append_to_dict_list(debug_dict, "tebd_update_N_iters", num_iters)
+    if debug_logger.log_iterative_local_tebd_update_errors_per_iteration:
+        debug_logger.append_to_log_list(("local_tebd_update_errors_per_iteration"), errors)
+    if debug_logger.log_iterative_local_tebd_update_info:
+        debug_logger.append_to_log_list(("iterative_local_tebd_update_info", "N_iters"), num_iters)
     return T1_prime, T2_prime, Wm1_prime, W_prime, Wp1_prime

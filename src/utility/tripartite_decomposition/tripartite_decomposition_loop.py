@@ -2,7 +2,7 @@ import numpy as np
 from scipy.linalg import svd
 import time 
 from sklearn.utils.extmath import randomized_svd
-from .. import debug_levels
+from .. import debug_logging
 
 def get_psi(A,S,B):
     psi_p = np.tensordot(S,B,axes=[2,1]) # i a j b
@@ -103,26 +103,28 @@ def split_psi(psi, dL, dR, truncation_par={'chi_max':10, 'p_trunc':1e-8,}, max_i
             info["Ss"].append(S)
     
     info['s_Lambda'] = np.diag(Y)
-    return A, S, B, info
+    return A, S, B, m, info
 
-def tripartite_decomposition(T, D1, D2, chi, N_iters=100, eps=1e-9, p_trunc=1e-8, initialize="psi0", debug_dict=None):
+def tripartite_decomposition(T, D1, D2, chi, N_iters=100, eps=1e-9, p_trunc=1e-8, initialize="psi0", debug_logger=debug_logging.DebugLogger()):
     chi_1, chi_2, chi_3 = T.shape
     T = T.transpose(0, 2, 1) # chi_1 chi_2 chi_3 = d mR mL -> d mL mR
     # D1 D2 = dR dL
     # chi = chi_max
-    log_iterates = debug_levels.check_debug_level(debug_dict, debug_levels.DebugLevel.LOG_PER_ITERATION_DEBUG_INFO_DISENTANGLER_TRIPARTITE_DECOMPOSITION)
-    A, S, B, info = split_psi(psi=T, dL=D2, dR=D1, truncation_par={'chi_max':chi, 'p_trunc':p_trunc,}, max_iter=N_iters, eps=eps, init=initialize, log_iterates=log_iterates)
+    A, S, B, m, info = split_psi(psi=T, dL=D2, dR=D1, truncation_par={'chi_max':chi, 'p_trunc':p_trunc,}, max_iter=N_iters, eps=eps, init=initialize, log_iterates=debug_logger.tripartite_decomposition_log_iterates)
     A = A.transpose(0, 2, 1) # A: d dL dR = chi_1 D2 D1 -> chi_1 D1 D2
     B = B.transpose(0, 2, 1) # B: dR chi mR = D1 chi chi_2 -> D1 chi_2 chi
     C = S.transpose(0, 2, 1) # S: dL mL chi = D2 chi_3 chi -> D2 chi chi_3
-    if log_iterates:
-        debug_dict["tripartite_decomposition_iterates_A"] = []
-        debug_dict["tripartite_decomposition_iterates_B"] = []
-        debug_dict["tripartite_decomposition_iterates_C"] = []
+    if debug_logger.tripartite_decomposition_log_iterates:
+        iterates = []
         for i in range(len(info["As"])):
-            debug_dict["tripartite_decomposition_iterates_A"].append(info["As"][i].transpose(0, 2, 1)) # A: d dL dR = chi_1 D2 D1 -> chi_1 D1 D2
-            debug_dict["tripartite_decomposition_iterates_B"].append(info["Bs"][i].transpose(0, 2, 1)) # B: dR chi mR = D1 chi chi_2 -> D1 chi_2 chi
-            debug_dict["tripartite_decomposition_iterates_C"].append(info["Ss"][i].transpose(0, 2, 1)) # S: dL mL chi = D2 chi_3 chi -> D2 chi chi_3
+            iterates.append({
+                "A":info["As"][i].transpose(0, 2, 1), # A: d dL dR = chi_1 D2 D1 -> chi_1 D1 D2
+                "B":info["Bs"][i].transpose(0, 2, 1), # B: dR chi mR = D1 chi chi_2 -> D1 chi_2 chi
+                "C":info["Ss"][i].transpose(0, 2, 1) # S: dL mL chi = D2 chi_3 chi -> D2 chi chi_3
+                })
+        debug_logger.append_to_log_list(("tripartite_decomopsition_info", "iterates"), iterates)
+    if debug_logger.tripartite_decomposition_log_info:
+        debug_logger.append_to_log_list(("tripartite_decomopsition_info", "N_iters"), m)
     return A, B, C
 
 

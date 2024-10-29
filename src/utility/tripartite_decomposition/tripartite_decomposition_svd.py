@@ -1,8 +1,9 @@
 import numpy as np
 from .. import utility
 from ..disentangle import disentangle as disentangle_lib
+from .. import debug_logging
 
-def tripartite_decomposition(T, D1, D2, chi, N_iters_svd=None, eps_svd=0.0, disentangle=False, disentangle_options={}, debug_dict=None):
+def tripartite_decomposition(T, D1, D2, chi, N_iters_svd=None, eps_svd=0.0, disentangle=False, disentangle_options={}, debug_logger=debug_logging.DebugLogger()):
     """
     Performs the tripartite decomposition via two consecutive SVDs. Optionally a disentangling step is done before the second SVD.
 
@@ -26,8 +27,8 @@ def tripartite_decomposition(T, D1, D2, chi, N_iters_svd=None, eps_svd=0.0, dise
     disentangle_options : dictionary, optional
         options that get passed into the disentangler as kwargs.
         See src/utility/disentangle/disentangle.py for more information
-    debug_dict : dictionary, optional
-        dictionary in which debug information is saved. Default: None.
+    debug_logger : DebugLogger instance, optional
+        DebugLogger instance managing debug logging. See 'src/utility/debug_logging.py' for more details.
 
     Returns
     -------
@@ -52,7 +53,7 @@ def tripartite_decomposition(T, D1, D2, chi, N_iters_svd=None, eps_svd=0.0, dise
     # Optionally disentangle
     if disentangle:
         theta = theta.transpose(2, 0, 1, 3) # D1, D2, chi_2, chi_3 -> chi_2, D_1, D_2, chi_3
-        U = disentangle_lib.disentangle(theta, debug_dict=debug_dict, chi=chi, **disentangle_options)
+        U = disentangle_lib.disentangle(theta, debug_logger=debug_logger, chi=chi, **disentangle_options)
         # Apply U to W
         theta = np.tensordot(U, theta, ([2, 3], [1, 2])) # D1 D2 [D1*] [D2*]; chi_2 [D1] [D2] chi_3 -> D1 D2 chi_2 chi_3
         theta = theta.transpose((0, 2, 1, 3)) # D1, D2, chi_2, chi_3 -> D1, chi_2, D2, chi_3

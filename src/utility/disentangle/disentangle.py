@@ -3,7 +3,7 @@ from .. import utility
 from . import disentangle_renyi_alpha
 from . import disentangle_trunc_error
 from . import disentangle_renyi_alpha_trunc_error
-from .. import debug_levels
+from .. import debug_logging
 
 def initialize_disentangle(theta, init_U="polar", N_iters_pre_disentangler=200):
     """
@@ -69,13 +69,13 @@ def initialize_disentangle(theta, init_U="polar", N_iters_pre_disentangler=200):
 
     # Perform initial disentangling using the fast renyi-2 disentangler
     if N_iters_pre_disentangler > 0:
-        U = disentangle_renyi_alpha.disentangle(theta, debug_dict=None, renyi_alpha=2.0, method="power_iteration", N_iters=N_iters_pre_disentangler)
+        U = disentangle_renyi_alpha.disentangle(theta, debug_logger=debug_logging.DebugLogger(), renyi_alpha=2.0, method="power_iteration", N_iters=N_iters_pre_disentangler)
         theta = np.tensordot(U, theta, ([2, 3], [1, 2])).transpose(2, 0, 1, 3) # i j [i*] [j*]; ml [d1] [d2] mr -> i j ml mr -> ml i j mr
         U0 = np.dot(U.reshape(d1*d2, d1*d2), U0)
     
     return U0, theta
 
-def disentangle(theta, mode="renyi", init_U="polar", N_iters_pre_disentangler=200, chi=None, debug_dict=None, **kwargs):
+def disentangle(theta, mode="renyi", init_U="polar", N_iters_pre_disentangler=200, chi=None, debug_logger=debug_logging.DebugLogger(), **kwargs):
     """
     Disentangles a given wavefunction tensor theta by optimizing over the unitary U:
     
@@ -112,8 +112,8 @@ def disentangle(theta, mode="renyi", init_U="polar", N_iters_pre_disentangler=20
     chi : int or None, optional
         truncated bond dimension used for the computation of the truncation error cost function.
         this parameter is not needed when using "trunc" as the cost function.
-    debug_dict : dictionary, optional
-        dictionary in which debug information is saved. Default: None.
+    debug_logger : DebugLogger instance, optional
+        DebugLogger instance managing debug logging. See 'src/utility/debug_logging.py' for more details.
     **kwargs
         remaining kwargs are passed into the respective method chosen with method.
         See the different called functions for more information.
@@ -126,17 +126,17 @@ def disentangle(theta, mode="renyi", init_U="polar", N_iters_pre_disentangler=20
     _, d1, d2, _ = theta.shape
     # Initialize disentangling unitary
     U0, theta = initialize_disentangle(theta, init_U, N_iters_pre_disentangler)
-    if debug_levels.check_debug_level(debug_dict, debug_levels.DebugLevel.LOG_PER_ITERATION_DEBUG_INFO_DISENTANGLER_TRIPARTITE_DECOMPOSITION):
-        debug_dict["disentangler_U0"] = U0.reshape(d1, d2, d1, d2)
+    if debug_logger.disentangling_log_iterates:
+        debug_logger.append_to_log_list(("disentangler_info", "U0s"), U0.reshape(d1, d2, d1, d2))
     # Perform disentangling
     if mode == "renyi":
-        U = disentangle_renyi_alpha.disentangle(theta, debug_dict=debug_dict, **kwargs)
+        U = disentangle_renyi_alpha.disentangle(theta, debug_logger=debug_logger, **kwargs)
     elif mode == "renyi_approx":
-        U = disentangle_renyi_alpha.disentangle_approx(theta, chi, debug_dict=debug_dict, **kwargs)
+        U = disentangle_renyi_alpha.disentangle_approx(theta, chi, debug_logger=debug_logger, **kwargs)
     elif mode == "trunc":
-        U = disentangle_trunc_error.disentangle(theta, chi, debug_dict=debug_dict, **kwargs)
+        U = disentangle_trunc_error.disentangle(theta, chi, debug_logger=debug_logger, **kwargs)
     elif mode == "trunc_approx":
-        U = disentangle_trunc_error.disentangle_approx(theta, chi, debug_dict=debug_dict, **kwargs)
+        U = disentangle_trunc_error.disentangle_approx(theta, chi, debug_logger=debug_logger, **kwargs)
     elif mode == "renyi_trunc":
         assert("options_renyi" in kwargs and type("options_renyi") == dict)
         assert("options_trunc" in kwargs and type("options_trunc") == dict)

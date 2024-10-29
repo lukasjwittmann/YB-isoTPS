@@ -656,3 +656,68 @@ def hdf_dict_to_python_dict(d):
 
 def load_dict_from_file(filename):
     return hdf_dict_to_python_dict(hdfdict.load(filename))
+
+def turn_lists_to_dicts(d):
+    """
+    Recursively loops through the contents of the given dictionary, turning all lists [element_1, element_2, ..., element_n] 
+    into dictionaries {"1": element_1, "2": element_2, ..., "n": element_n} if element_1, element_2, ..., element_n are lists
+    or dicts themselves. This is used for storing lists of elements in 
+    h5-files using hdfdict.dump.
+
+    Parameters
+    ----------
+    d : dict
+        the dictionary that should be processed.
+    """
+    for key in d:
+        if type(d[key]) is list:
+            # Check if the elements are all of numerical type
+            is_dict_or_list = False
+            for element in d[key]:
+                if type(element) == dict or type(element) == list:
+                    is_dict_or_list = True
+                    break
+            if is_dict_or_list:
+                # Turn list into dict
+                temp_dict = {}
+                for i, item in enumerate(d[key]):
+                    temp_dict[str(i)] = item
+                d[key] = temp_dict
+        if type(d[key]) is dict:
+            turn_lists_to_dicts(d[key])
+
+def turn_dicts_to_lists(d):
+    """
+    Recursively loops through the contents of the given dictionary, turning all dictionaries of the form
+    {"1": element_1, "2": element_2, ..., "n": element_n} back to lists lement_1, element_2, ..., element_n].
+    This is used for recovering the original structure of the debug_log when loading from file.
+    
+    Parameters
+    ----------
+    d : dict
+        the dictionary that should be processed.
+    """
+    # Go through all keys in d
+    for key in d:
+        if type(d[key]) is dict:
+            # Check if d[key] has the expected list format
+            i = 0
+            while True:
+                if str(i) in d[key]:
+                    i += 1
+                else:
+                    i -= 1
+                    break
+            if i == -1 or len(d[key] != i+1):
+                # The dictionary is not in the expected format. Recursively go down if the element is a dictionary
+                turn_dicts_to_lists(d[key])
+            else:
+                # The dictionary is in the expected format. Turn into a list!
+                temp_list = []
+                for j in range(i+1):
+                    temp_list.append(d[key][str(j)])
+                d[key] = temp_list
+                # Go through the list and recursively call turn_dicts_to_lists if the elements are dictionaries themselves
+                for j in range(i+1):
+                    if type(d[key][j]) is dict:
+                        turn_dicts_to_lists(d[key][j])

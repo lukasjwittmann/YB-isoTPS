@@ -1,5 +1,5 @@
 import numpy as np
-from ..utility import debug_levels
+from ..utility import debug_logging
 from . import shifting_ortho_center
 import h5py
 import hdfdict
@@ -10,7 +10,7 @@ class isoTPS:
     isoTPS_Honeycomb implement remaining lattice dependant functionality. 
     """
 
-    def __init__(self, Lx, Ly, D_max=4, chi_factor=6, chi_max=None, d=2, shifting_options={ "mode" : "svd" }, yb_options={ "mode" : "svd" }, tebd_options={ "mode" : "svd" }, ordering_mode="center", debug_level=debug_levels.DebugLevel.NO_DEBUG):
+    def __init__(self, Lx, Ly, D_max=4, chi_factor=6, chi_max=None, d=2, shifting_options={ "mode" : "svd" }, yb_options={ "mode" : "svd" }, tebd_options={ "mode" : "svd" }, ordering_mode="center", perform_variational_column_optimization=False, variational_column_optimization_options={}, debug_logger_options={}):
         """
         Initializes the isoTPS.
 
@@ -42,9 +42,14 @@ class isoTPS:
         ordering_mode : str, optional
             string specifying the rule for choosing how bond dimension is distributed between the bonds when performing Yang-Baxter moves.
             For more information on allowed orering_mode strings, see the __init__ method of the sub class of isoTPS. Default: "center". 
-        debug_level : enum class DebugLevel, optional
-            the debug level decides which information is logged and if warnings/errors are printed to the console. See "utility/debug_levels.py"
-            for more information. Default: DebugLevel.NO_DEBUG.
+        perform_variational_column_optimization : bool, optional
+            wether to perform a variational column optimization after shifting the column with YB moves. Default: False.       
+        variational_column_optimization_options : dict, optional
+            options for performing the variational column optimization. See "src/isoTPS/square/column_optimization.py" for more information.
+            Default: {}.
+        debug_logger_options: dict, optional
+            dictionary containing kwargs that get passed into the constructor of the DebugLogger instance used in this isoTPS.
+            This can be used to turn on certain parts of the debug logging. See "utility/debug_logging.py" for more information. Default: {}.
         """
         # System size
         self.Lx = Lx
@@ -66,16 +71,29 @@ class isoTPS:
         self.tebd_options = tebd_options
         # bond ordering
         self.ordering_mode = ordering_mode
-        # Debug printing level
-        self.debug_level = debug_level
+        # variational column optimization
+        self.perform_variational_column_optimization = perform_variational_column_optimization
+        self.variational_column_optimization_options = variational_column_optimization_options
+        # debug logger
+        self.debug_logger_options = debug_logger_options
+        self.debug_logger = debug_logging.DebugLogger(**debug_logger_options)
+        # logging variables for keeping track of time spent in subroutines
+        self.time_counter_yb_move = 0.0
+        self.time_counter_variational_column_optimization = 0.0
+        self.time_counter_tebd_local_update = 0.0
         # Initialize internal variables
         self.Ts = [None] * Lx * Ly * 2
         self.Ws = [None] * (Ly * 2 - 1)
         self.ortho_surface = 0
         self.ortho_center = 0
-        # Initialize debug variables
-        self.debug_dict = None
-        self.reset_debug_dict()
+
+    def reset_time_counters(self):
+        """
+        Resets the logging variables that keep track of the time spent in subroutines
+        """
+        self.time_counter_yb_move = 0.0
+        self.time_counter_tebd_local_update = 0.0
+        self.time_counter_variational_column_optimization = 0.0
 
     def save_to_file(self, filename, data=None):
         """
@@ -103,7 +121,7 @@ class isoTPS:
         data["yb_obtions"] = self.yb_options
         data["tebd_options"] = self.tebd_options
         data["ordering_mode"] = self.ordering_mode
-        data["debug_level"] = self.debug_level
+        data["debug_logger_options"] = self.debug_logger_options
         data["Ts"] = {}
         for i, T in enumerate(self.Ts):
             data["Ts"][f"T{i}"] = T
@@ -112,12 +130,12 @@ class isoTPS:
             data["Ws"][f"W{i}"] = W
         data["ortho_surface"] = self.ortho_surface
         data["ortho_center"] = self.ortho_center
-        data["debug_dict"] = self.debug_dict
         # Save to .h5 file
         with h5py.File(filename, "w") as file:
             hdfdict.dump(data, file)
+            self.debug_logger.save_to_file_h5(file)
 
-    def _load_from_dict(self, data):
+    def _load_from_dict(self, data, load_debug_log=True):
         """
         Loads an isoTPS from a dictionary. This should only be called by derived classes.
 
@@ -125,6 +143,8 @@ class isoTPS:
         ----------
         data : dict
             dictionary containing isoTPS data.
+        load_debug_log : bool, optional
+            wether or not to load the debug log from the file. Default: True 
         """
         self.Lx = data["Lx"]
         self.Ly = data["Ly"]
@@ -136,7 +156,7 @@ class isoTPS:
         self.yb_options = data["yb_obtions"]
         self.tebd_options = data["tebd_options"]
         self.ordering_mode = data["ordering_mode"]
-        self.debug_level = data["debug_level"]
+        self.debug_logger = debug_logging.DebugLogger(data["debug_logger_options"])
         self.Ts = [None] * self.Lx * self.Ly * 2
         for i in range(self.Lx * self.Ly * 2):
             self.Ts[i] = data["Ts"][f"T{i}"]
@@ -145,7 +165,8 @@ class isoTPS:
             self.Ws[i] = data["Ws"][f"W{i}"]
         self.ortho_surface = data["ortho_surface"]
         self.ortho_center = data["ortho_center"]
-        self.debug_dict = data["debug_dict"]  
+        if load_debug_log:
+            self.debug_logger.load_debug_log(data["debug_log"])
 
     def _init_as_copy(self, original_tps):
         """
@@ -296,52 +317,6 @@ class isoTPS:
                 print(f"W[{i}] = None")
             else:
                 print(f"W[{i}] = {self.Ws[i].shape}")
-
-    def reset_debug_dict(self):
-        """
-        Clears all stored debug information
-        """
-        if self.debug_level > debug_levels.DebugLevel.NO_DEBUG:
-            self.debug_dict = {"debug_level": self.debug_level}
-            self.reset_debug_errors_and_times()
-        else:
-            self.debug_dict = None
-
-    def reset_debug_errors_and_times(self):
-        """
-        Clears only the stored per site/bond error and walltime information
-        """
-        if debug_levels.check_debug_level(self.debug_dict, debug_levels.DebugLevel.LOG_PER_SITE_ERROR_AND_WALLTIME):
-            # Initialize debug variables for site/bond specific YB and TEBD errors
-            self.debug_dict["errors_yb"] = np.zeros((self.Ly, 2*self.Lx-2))
-            self.debug_dict["errors_tebd"] = np.zeros((2*self.Ly-1, 2*self.Lx-1))
-            # Initialize debug variables for site/bond YB and TEBD walltimes
-            self.debug_dict["times_yb"] = np.zeros((self.Ly, 2*self.Lx-2))
-            self.debug_dict["times_tebd"] = np.zeros((2*self.Ly-1, 2*self.Lx-1))
-
-    def dump_debug_dict(self, h5file):
-        """
-        Dumps the debug dictionary into an h5 file
-
-        Parameters
-        ----------
-        h5file : h5py.File
-            file that the debug_dict is to be written to
-        """
-        if self.debug_level > debug_levels.DebugLevel.NO_DEBUG:
-            for key, value in self.debug_dict.items():
-                h5file[key] = value
- 
-    def get_debug_dict(self):
-        """
-        Returns the debug dictionary
-
-        Returns
-        -------
-        debug_dict: dict
-            the debug dictionary
-        """
-        return self.debug_dict
 
     def check_isometry_condition(self):
         """

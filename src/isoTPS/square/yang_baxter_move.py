@@ -1,9 +1,9 @@
 import numpy as np
 from ...utility import utility
 from ...utility.tripartite_decomposition import tripartite_decomposition
-from ...utility import debug_levels
+from ...utility import debug_logging
 
-def yang_baxter_move(W1, W2, T, D_max, chi_max, larger_bond_direction="down", options={"mode": "svd"}, debug_dict=None):
+def yang_baxter_move(W1, W2, T, D_max, chi_max, larger_bond_direction="down", options={"mode": "svd"}, debug_logger=debug_logging.DebugLogger()):
     """
     Performs the Yang baxter move
 
@@ -45,8 +45,8 @@ def yang_baxter_move(W1, W2, T, D_max, chi_max, larger_bond_direction="down", op
         Options are passed as keyword arguments to the tripartite decomposition subroutine, see
         "src/utility/tripartite_decomposition/tripartite_decomposition.py" for more information.
         Default value: {"mode" : "svd"}.
-    debug_dict : dictionary, optional
-        dictionary in which debug information is saved. Default: None.
+    debug_logger : DebugLogger instance, optional
+        DebugLogger instance managing debug logging. See 'src/utility/debug_logging.py' for more details.
         
     Returns
     -------
@@ -57,10 +57,10 @@ def yang_baxter_move(W1, W2, T, D_max, chi_max, larger_bond_direction="down", op
     T': np.ndarray of shape (i, ru, rd, ld, lu)
         updated isometric site tensor
     error: float
-        the normalized error norm(contr_before - contr_after) / norm(contr_before).
-        If the debug level is smaller than LOG_PER_SITE_ERROR_AND_WALLTIME, -float("inf") is returned as an error.
+        If debug_logger.log_yb_move_errors is True or debug_logger.log_approximate_column_error_yb is True, the relative error 
+        norm(contr_before - contr_after) / norm(contr_before) is returned. Else, -float("inf") is returned.
     """
-    log_error = debug_levels.check_debug_level(debug_dict, debug_levels.DebugLevel.LOG_PER_SITE_ERROR_AND_WALLTIME)
+    log_error = debug_logger.log_yb_move_errors or debug_logger.log_approximate_column_error_yb
     # 1.) Handle edge cases
     if W1 is None:
         # Contract everything together
@@ -115,7 +115,7 @@ def yang_baxter_move(W1, W2, T, D_max, chi_max, larger_bond_direction="down", op
 
     # 5.) Call tripartite decomposition subroutine
     chi = min(chi_max, psi.shape[1]*D1, psi.shape[2]*D2)
-    T, W1_prime, W2_prime = tripartite_decomposition.tripartite_decomposition(psi, D1, D2, chi, debug_dict=debug_dict, **options)
+    T, W1_prime, W2_prime = tripartite_decomposition.tripartite_decomposition(psi, D1, D2, chi, debug_logger=debug_logger, **options)
 
     # 6.) Finalize and return tensors
     T = np.reshape(T, (l, lp1, i, D1, D2)) # (l, lp1, i), D1, D2 -> l, lp1, i, D1, D2 = ld, lu, p, rd, ru

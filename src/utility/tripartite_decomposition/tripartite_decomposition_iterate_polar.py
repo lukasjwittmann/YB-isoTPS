@@ -1,9 +1,9 @@
 import numpy as np
 from .. import utility
 from . import tripartite_decomposition_svd
-from .. import debug_levels
+from .. import debug_logging
 
-def tripartite_decomposition(T, D1, D2, chi, N_iters=100, eps=1e-9, initialize="svd", A0=None, B0=None, debug_dict=None):
+def tripartite_decomposition(T, D1, D2, chi, N_iters=100, eps=1e-9, initialize="svd", A0=None, B0=None, debug_logger=debug_logging.DebugLogger()):
     """
     Performs the tripartite decomposition by iterating over the three tensors while optimizing them.
     The isometry condition is enforced using the polar decomposition.
@@ -31,8 +31,8 @@ def tripartite_decomposition(T, D1, D2, chi, N_iters=100, eps=1e-9, initialize="
     B0 : np.ndarray of shape (D1, chi_2, chi) or None, optional
         Initialization of the A tensor. If this is not None, B0 must also be specified.
         Default: None
-    debug_dict : dictionary, optional
-        dictionary in which debug information is saved. Default: None.
+    debug_logger : DebugLogger instance, optional
+        DebugLogger instance managing debug logging. See 'src/utility/debug_logging.py' for more details.
     
     Returns
     -------
@@ -89,11 +89,9 @@ def tripartite_decomposition(T, D1, D2, chi, N_iters=100, eps=1e-9, initialize="
         C = np.transpose(C, (1, 2, 0)) # chi_3, D2*, chi* = chi_3, D2, chi -> D2, chi, chi_3
         C /= np.linalg.norm(C)
     # debug information
-    log_debug_info = debug_levels.check_debug_level(debug_dict, debug_levels.DebugLevel.LOG_PER_ITERATION_DEBUG_INFO_DISENTANGLER_TRIPARTITE_DECOMPOSITION)
-    if log_debug_info:
-        As = []
-        Bs = []
-        Cs = []
+    if debug_logger.tripartite_decomposition_log_environment_per_iteration:
+        iterates = []
+    if debug_logger.tripartite_decomposition_log_info_per_iteration:
         costs = []
     # Main loop
     f = None
@@ -117,27 +115,24 @@ def tripartite_decomposition(T, D1, D2, chi, N_iters=100, eps=1e-9, initialize="
         f_new = np.sqrt(max(2.0 - 2.0*norm, 0.0))
         C /= norm
         # log debug information
-        if log_debug_info:
-            As.append(A)
-            Bs.append(B)
-            Cs.append(C)
+        if debug_logger.tripartite_decomposition_log_iterates:
+            iterates.append({"A": A, "B": B, "C": C})
+        if debug_logger.tripartite_decomposition_log_info_per_iteration:
             costs.append(f_new)
         # Check if algorithm should terminate
         if f is not None and np.abs(f - f_new) < eps:
-            if debug_levels.check_debug_level(debug_dict, debug_levels.DebugLevel.LOG_DISENTANGLER_TRIPARTITE_DECOMPOSITION_ITERATION_INFO):
-                utility.append_to_dict_list(debug_dict, "N_iters_tripartite_decomposition", n + 1)
-            if log_debug_info:
-                debug_dict["tripartite_decomposition_iterates_A"] = As
-                debug_dict["tripartite_decomposition_iterates_B"] = Bs
-                debug_dict["tripartite_decomposition_iterates_C"] = Cs
-                debug_dict["tripartite_decomposition_costs"] = costs
+            if debug_logger.tripartite_decomposition_log_iterates:
+                debug_logger.append_to_log_list(("tripartite_decomopsition_info", "iterates"), iterates)
+            if debug_logger.tripartite_decomposition_log_info_per_iteration:
+                debug_logger.append_to_log_list(("tripartite_decomopsition_info", "costs"), costs)
+            if debug_logger.tripartite_decomposition_log_info:
+                debug_logger.append_to_log_list(("tripartite_decomopsition_info", "N_iters"), n+1)
             return A, B, C
         f = f_new
-    if debug_levels.check_debug_level(debug_dict, debug_levels.DebugLevel.LOG_DISENTANGLER_TRIPARTITE_DECOMPOSITION_ITERATION_INFO):
-        utility.append_to_dict_list(debug_dict, "N_iters_tripartite_decomposition", N_iters)
-    if log_debug_info:
-        debug_dict["tripartite_decomposition_iterates_A"] = As
-        debug_dict["tripartite_decomposition_iterates_B"] = Bs
-        debug_dict["tripartite_decomposition_iterates_C"] = Cs
-        debug_dict["tripartite_decomposition_costs"] = costs
+    if debug_logger.tripartite_decomposition_log_iterates:
+        debug_logger.append_to_log_list(("tripartite_decomopsition_info", "iterates"), iterates)
+    if debug_logger.tripartite_decomposition_log_info_per_iteration:
+        debug_logger.append_to_log_list(("tripartite_decomopsition_info", "costs"), costs)
+    if debug_logger.tripartite_decomposition_log_info:
+        debug_logger.append_to_log_list(("tripartite_decomopsition_info", "N_iters"), N_iters)
     return A, B, C

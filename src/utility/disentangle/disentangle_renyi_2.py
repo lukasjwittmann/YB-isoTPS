@@ -1,8 +1,8 @@
 import numpy as np
 from .. import utility
-from .. import debug_levels
+from .. import debug_logging
 
-def disentangle(theta, eps=1e-10, N_iters=200, min_iters=0, debug_dict=None):
+def disentangle(theta, eps=1e-10, N_iters=200, min_iters=0, debug_logger=debug_logging.DebugLogger()):
     """
     Disentangles the given wavefunction theta by minimizing the renyi-2-entropy, using the fast power iteration method. This disentangler was introduced in
     [1] J. Hauschild, E. Leviatan, J. H. Bardarson, E. Altman, M. P. Zaletel, and F. Pollmann: "Finding purifications with minimal entanglement", https://arxiv.org/abs/1711.01288 
@@ -19,8 +19,8 @@ def disentangle(theta, eps=1e-10, N_iters=200, min_iters=0, debug_dict=None):
     min_iters : int, optional
         Minimum number of iterations, before the eps condition leads to a termination of the algorithm.
         Mostly for debugging purposes. Default: 0.
-    debug_dict : dictionary, optional
-        dictionary in which debug information is saved. Default: None.
+    debug_logger : DebugLogger instance, optional
+        DebugLogger instance managing debug logging. See 'src/utility/debug_logging.py' for more details.
 
     Returns
     -------
@@ -59,9 +59,8 @@ def disentangle(theta, eps=1e-10, N_iters=200, min_iters=0, debug_dict=None):
     _, d1, d2, _ = theta.shape
     U = np.eye(d1*d2, dtype = theta.dtype) # { D^4 }
     # debug info
-    log_debug_info = debug_levels.check_debug_level(debug_dict, debug_levels.DebugLevel.LOG_PER_ITERATION_DEBUG_INFO_DISENTANGLER_TRIPARTITE_DECOMPOSITION)
-    if log_debug_info:
-        debug_dict["disentangler_iterates"] = []
+    if debug_logger.disentangling_log_iterates:
+        iterates = []
     # Main loop
     m = 0
     go = True
@@ -69,8 +68,8 @@ def disentangle(theta, eps=1e-10, N_iters=200, min_iters=0, debug_dict=None):
     while m < N_iters and (go or m < min_iters):
         s, u = _U2(theta) 
         U = np.dot(u, U)
-        if log_debug_info:
-            debug_dict["disentangler_iterates"].append(U.reshape((d1,d2,d1,d2)))
+        if debug_logger.disentangling_log_iterates:
+            iterates.append(U.reshape((d1,d2,d1,d2)))
         u = u.reshape((d1,d2,d1,d2))
         theta = np.tensordot(u.conj(), theta, axes = [[2, 3], [1, 2]]).transpose([2, 0, 1, 3])
         Ss.append(s)
@@ -78,7 +77,9 @@ def disentangle(theta, eps=1e-10, N_iters=200, min_iters=0, debug_dict=None):
             go = Ss[-2] - Ss[-1] > eps 
         m+=1
     # Save debug information
-    if debug_levels.check_debug_level(debug_dict, debug_levels.DebugLevel.LOG_DISENTANGLER_TRIPARTITE_DECOMPOSITION_ITERATION_INFO):
-        utility.append_to_dict_list(debug_dict, "N_iters_disentangler", m)
+    if debug_logger.disentangling_log_iterates:
+        debug_logger.append_to_log_list(("disentangler_info", "iterates"), iterates)
+    if debug_logger.disentangling_log_info:
+        debug_logger.append_to_log_list(("disentangler_info", "N_iters"), m)
     # Return result
     return np.reshape(np.conj(U), (d1, d2, d1, d2))

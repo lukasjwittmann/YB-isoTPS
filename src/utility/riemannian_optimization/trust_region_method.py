@@ -199,7 +199,7 @@ class TrustRegionOptimizer:
             delta_delta = r_r + beta**2 * delta_delta
         return eta, Heta, N_iters_tCG, hit_delta
 
-    def optimize(self, initial_iterate, log_debug_info=False, print_warnings=False):
+    def optimize(self, initial_iterate, log_debug_info=False, log_iterates=False, print_warnings=False):
         """
         Optimizes the given initial iterate with the Trust Region method.
 
@@ -208,7 +208,9 @@ class TrustRegionOptimizer:
         initial_iterate : instance of iterate class
             the initial iterate
         log_debug_info : bool, optional
-            wether to store and return per-iteration debug information. Default: False
+            wether to store and return per-iteration debug information (costs, trust region radii and tCG iterations). Default: False.
+        log_iterates : bool, optional
+            wether to store and return all iterates. Default: False.
         print_warnings : bool, optional
             wether to print warnings when many consecutive trust-region radius increases or decreases occur. Default : False.
 
@@ -218,21 +220,26 @@ class TrustRegionOptimizer:
             the final iterate
         num_iters : int
             the number of iterations the algorithm was run for
-        debug_info : tuple or None
-            tuple with debug information, containing four lists: A list of iterates (np.ndarray), a list of costs (float), 
-            a list of step trust-region radii (float), and a list of tCG iteration counts (int).
-            If log_debug_info == False, None is returned instead.
+        debug_info : tuple
+            tuple with debug information, containing four lists: A list of costs (float), a list of trust-region radii (float),
+            a list of tCG iteration counts (int) and a list of iterates (np.ndarray). If log_debug_info == False or 
+            log_iterates == False, the corresponding entries in the tuple are None.
         """
         iterate = initial_iterate
         cost = iterate.evaluate_cost_function()
         gradient = iterate.compute_gradient()
         Delta = self.Delta0
         gradient_norm = self.manifold.norm(gradient)
+        costs = None
+        Deltas = None
+        N_iters_tCG_list = None
+        iterates = None
         if log_debug_info:
-            iterates = [initial_iterate.get_iterate()]
             costs = [cost]
             Deltas = [Delta]
             N_iters_tCG_list = []
+        if log_iterates:
+            iterates = [initial_iterate.get_iterate()]
         # relative cost diff of this and last iteration (stopping criterion)
         relative_cost_diff = None
         # Helper variables to keep track of consecutive trust region radius changes. We may want to warn the user if the radius changes a lot!
@@ -312,15 +319,13 @@ class TrustRegionOptimizer:
                 relative_cost_diff = None
                 
             if log_debug_info:
-                iterates.append(iterate.get_iterate())
                 costs.append(cost)
                 Deltas.append(Delta)
+            if log_iterates:
+                iterates.append(iterate.get_iterate())
             
             # Check for stopping criterion
             if gradient_norm < self.min_gradient_norm or Delta < self.min_Delta or (relative_cost_diff is not None and np.abs(relative_cost_diff) < self.min_relative_cost_diff):
                 break
 
-        if log_debug_info:
-            return iterate.get_iterate(), n, (iterates, costs, Deltas, N_iters_tCG_list)
-        else:
-            return iterate.get_iterate(), n, None
+        return iterate.get_iterate(), n, (costs, Deltas, N_iters_tCG_list, iterates)

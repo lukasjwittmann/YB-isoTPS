@@ -4,8 +4,9 @@ from . import tripartite_decomposition_svd
 from . import tripartite_decomposition_iterate_polar
 from . import tripartite_decomposition_iterate_rank_reduce
 from . import tripartite_decomposition_loop
+from .. import debug_logging
 
-def tripartite_decomposition(T, D1, D2, chi, mode="svd", debug_dict=None, **kwargs):
+def tripartite_decomposition(T, D1, D2, chi, mode="svd", debug_logger=debug_logging.DebugLogger(), **kwargs):
     """
     Computes the tripartite decomposition of tensor T:
 
@@ -33,8 +34,8 @@ def tripartite_decomposition(T, D1, D2, chi, mode="svd", debug_dict=None, **kwar
         bond dimension of the leg connecting the B and C tensor.
     mode : std, one of {"svd", "iterate_polar", "iterate_rank_reduce", "iterate_loop"}, optional
         string deciding the splitting algorithm. Default: "svd".
-    debug_dict : dictionary, optional
-        dictionary in which debug information is saved. Default: None.
+    debug_logger : DebugLogger instance, optional
+        DebugLogger instance managing debug logging. See 'src/utility/debug_logging.py' for more details.
     **kwargs
         remaining kwargs are passed into the respective method chosen with mode.
         See the different called functions for more information.
@@ -49,13 +50,13 @@ def tripartite_decomposition(T, D1, D2, chi, mode="svd", debug_dict=None, **kwar
         resulting C tensor, normalized.
     """
     if mode == "svd":
-        return tripartite_decomposition_svd.tripartite_decomposition(T, D1, D2, chi, debug_dict=debug_dict, **kwargs)
+        return tripartite_decomposition_svd.tripartite_decomposition(T, D1, D2, chi, debug_logger=debug_logger, **kwargs)
     elif mode == "iterate_polar":
-        return tripartite_decomposition_iterate_polar.tripartite_decomposition(T, D1, D2, chi, debug_dict=debug_dict, **kwargs)
+        return tripartite_decomposition_iterate_polar.tripartite_decomposition(T, D1, D2, chi, debug_logger=debug_logger, **kwargs)
     elif mode == "iterate_rank_reduce":
-        return tripartite_decomposition_iterate_rank_reduce.tripartite_decomposition(T, D1, D2, chi, debug_dict=debug_dict, **kwargs)
+        return tripartite_decomposition_iterate_rank_reduce.tripartite_decomposition(T, D1, D2, chi, debug_logger=debug_logger, **kwargs)
     elif mode == "iterate_loop":
-        return tripartite_decomposition_loop.tripartite_decomposition(T, D1, D2, chi, debug_dict=debug_dict, **kwargs)
+        return tripartite_decomposition_loop.tripartite_decomposition(T, D1, D2, chi, debug_logger=debug_logger, **kwargs)
     else:
         temp = r'{"svd", "iterate_polar", "iterate_rank_reduce", "iterate_loop"}'
         raise NotImplementedError(f"A tripartite decomposition with mode \"{mode}\" is not implemented. Choose one of {temp}")

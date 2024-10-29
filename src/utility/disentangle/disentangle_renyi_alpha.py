@@ -5,9 +5,9 @@ from ..riemannian_optimization import conjugate_gradients
 from ..riemannian_optimization import trust_region_method
 from ..riemannian_optimization import stiefel_manifold
 from . import renyiAlphaIterate
-from .. import debug_levels
+from .. import debug_logging
 
-def disentangle_CG(theta, renyi_alpha=0.5, debug_dict=None, **kwargs):
+def disentangle_CG(theta, renyi_alpha=0.5, debug_logger=debug_logging.DebugLogger(), **kwargs):
     """
     Disentangles the given wavefunction theta by minimizing the renyi-entropy, using Conjugate Gradients.
     The disentangling unitary is initialized with identity.
@@ -18,13 +18,11 @@ def disentangle_CG(theta, renyi_alpha=0.5, debug_dict=None, **kwargs):
         wavefunction tensor to be disentangled.
     renyi_alpha : float, optional
         renyi alpha. Default: 0.5.
-    debug_dict : dictionary, optional
-        dictionary in which debug information is saved. Default: None.
+    debug_logger : DebugLogger instance, optional
+        DebugLogger instance managing debug logging. See 'src/utility/debug_logging.py' for more details.
     **kwargs
         remaining kwargs are passed into the initialization of conjugate_gradients.ConjugateGradientsOptimizer()
         see src/utility/riemannian_optimization/conjugate_gradients.py for more information.
-    debug_dict : dictionary, optional
-        dictionary in which debug information is saved. Default: None.
 
     Returns
     -------
@@ -38,19 +36,19 @@ def disentangle_CG(theta, renyi_alpha=0.5, debug_dict=None, **kwargs):
     construct_new_iterate = lambda U, _ : renyiAlphaIterate.RenyiAlphaIterateCG(U, theta, renyi_alpha, chi_max=None, N_iters_svd=None, eps_svd=0, old_iterate=None)
     manifold = stiefel_manifold.ComplexStiefelManifold(n=D1*D2, p=D1*D2, shape=U0.shape)
     conjugateGradientsOptimizer = conjugate_gradients.ConjugateGradientsOptimizer(manifold=manifold, construct_iterate=construct_new_iterate, **kwargs)
-    log_debug_info = debug_levels.check_debug_level(debug_dict, debug_levels.DebugLevel.LOG_PER_ITERATION_DEBUG_INFO_DISENTANGLER_TRIPARTITE_DECOMPOSITION)
-    iterate, n, num_restarts_not_descent, num_restarts_powell, debug_info = conjugateGradientsOptimizer.optimize(construct_new_iterate(U0, None), log_debug_info=log_debug_info)
-    if debug_levels.check_debug_level(debug_dict, debug_levels.DebugLevel.LOG_DISENTANGLER_TRIPARTITE_DECOMPOSITION_ITERATION_INFO):
-        utility.append_to_dict_list(debug_dict, "N_iters_disentangler", n)
-        utility.append_to_dict_list(debug_dict, "disentangler_num_restarts_not_descent", num_restarts_not_descent)
-        utility.append_to_dict_list(debug_dict, "disentangler_num_restarts_powell", num_restarts_powell)
-    if log_debug_info:
-        debug_dict["disentangler_iterates"] = debug_info[0]
-        debug_dict["disentangler_costs"] = debug_info[1]
-        debug_dict["disentangler_step_sizes"] = debug_info[2]
+    iterate, n, num_restarts_not_descent, num_restarts_powell, debug_info = conjugateGradientsOptimizer.optimize(construct_new_iterate(U0, None), log_debug_info=debug_logger.disentangling_log_info_per_iteration, log_iterates=debug_logger.disentangling_log_iterates)
+    if debug_logger.disentangling_log_info:
+        debug_logger.append_to_log_list(("disentangler_info", "N_iters"), n)
+        debug_logger.append_to_log_list(("disentangler_info", "N_restarts_not_descent"), num_restarts_not_descent)
+        debug_logger.append_to_log_list(("disentangler_info", "N_restarts_powell"), num_restarts_powell)
+    if debug_logger.disentangling_log_info_per_iteration:
+        debug_logger.append_to_log_list(("disentangler_info", "costs"), debug_info[0])
+        debug_logger.append_to_log_list(("disentangler_info", "step_sizes"), debug_info[1])
+    if debug_logger.disentangling_log_iterates:
+        debug_logger.append_to_log_list(("disentangler_info", "iterates"), debug_info[2])
     return iterate
 
-def disentangle_approx_CG(theta, chi, renyi_alpha=0.5, N_iters_svd=5, eps_svd=1e-5, N_iters_svd_initial=5, debug_dict=None, **kwargs):
+def disentangle_approx_CG(theta, chi, renyi_alpha=0.5, N_iters_svd=5, eps_svd=1e-5, N_iters_svd_initial=5, debug_logger=debug_logging.DebugLogger(), **kwargs):
     """
     Disentangles the given wavefunction theta by minimizing the renyi-entropy, using Conjugate Gradients 
     with an approximate cost function. The disentangling unitary is initialized with identity.
@@ -73,8 +71,8 @@ def disentangle_approx_CG(theta, chi, renyi_alpha=0.5, N_iters_svd=5, eps_svd=1e
     N_iters_svd_initial : int or None, optional
         number of iterations the qr splitting algorithm is run for the initial iterate.
         Generally should be equal or larger than N_iters_svd. Default: 5.
-    debug_dict : dictionary, optional
-        dictionary in which debug information is saved. Default: None.
+    debug_logger : DebugLogger instance, optional
+        DebugLogger instance managing debug logging. See 'src/utility/debug_logging.py' for more details.
     **kwargs
         remaining kwargs are passed into the initialization of conjugate_gradients.ConjugateGradientsOptimizer()
         see src/utility/riemannian_optimization/conjugate_gradients.py for more information.
@@ -91,19 +89,19 @@ def disentangle_approx_CG(theta, chi, renyi_alpha=0.5, N_iters_svd=5, eps_svd=1e
     construct_new_iterate = lambda U, old_iterate : renyiAlphaIterate.RenyiAlphaIterateCG(U, theta, renyi_alpha, chi_max=chi, N_iters_svd=N_iters_svd, eps_svd=eps_svd)
     manifold = stiefel_manifold.ComplexStiefelManifold(n=D1*D2, p=D1*D2, shape=U0.shape)
     conjugateGradientsOptimizer = conjugate_gradients.ConjugateGradientsOptimizer(manifold=manifold, construct_iterate=construct_new_iterate, **kwargs)
-    log_debug_info = debug_levels.check_debug_level(debug_dict, debug_levels.DebugLevel.LOG_PER_ITERATION_DEBUG_INFO_DISENTANGLER_TRIPARTITE_DECOMPOSITION)
-    iterate, n, num_restarts_not_descent, num_restarts_powell, debug_info = conjugateGradientsOptimizer.optimize(renyiAlphaIterate.RenyiAlphaIterateCG(U0, theta, chi_max=chi, N_iters_svd=N_iters_svd_initial, eps_svd=eps_svd, old_iterate=None), log_debug_info=log_debug_info)
-    if debug_levels.check_debug_level(debug_dict, debug_levels.DebugLevel.LOG_DISENTANGLER_TRIPARTITE_DECOMPOSITION_ITERATION_INFO):
-        utility.append_to_dict_list(debug_dict, "N_iters_disentangler", n)
-        utility.append_to_dict_list(debug_dict, "disentangler_num_restarts_not_descent", num_restarts_not_descent)
-        utility.append_to_dict_list(debug_dict, "disentangler_num_restarts_powell", num_restarts_powell)
-    if log_debug_info:
-        debug_dict["disentangler_iterates"] = debug_info[0]
-        debug_dict["disentangler_costs"] = debug_info[1]
-        debug_dict["disentangler_step_sizes"] = debug_info[2]
+    iterate, n, num_restarts_not_descent, num_restarts_powell, debug_info = conjugateGradientsOptimizer.optimize(renyiAlphaIterate.RenyiAlphaIterateCG(U0, theta, chi_max=chi, N_iters_svd=N_iters_svd_initial, eps_svd=eps_svd, old_iterate=None), log_debug_info=debug_logger.disentangling_log_info_per_iteration, log_iterates=debug_logger.disentangling_log_iterates)
+    if debug_logger.disentangling_log_info:
+        debug_logger.append_to_log_list(("disentangler_info", "N_iters"), n)
+        debug_logger.append_to_log_list(("disentangler_info", "N_restarts_not_descent"), num_restarts_not_descent)
+        debug_logger.append_to_log_list(("disentangler_info", "N_restarts_powell"), num_restarts_powell)
+    if debug_logger.disentangling_log_info_per_iteration:
+        debug_logger.append_to_log_list(("disentangler_info", "costs"), debug_info[0])
+        debug_logger.append_to_log_list(("disentangler_info", "step_sizes"), debug_info[1])
+    if debug_logger.disentangling_log_iterates:
+        debug_logger.append_to_log_list(("disentangler_info", "iterates"), debug_info[2])
     return iterate
 
-def disentangle_TRM(theta, renyi_alpha=0.5, debug_dict=None, **kwargs):
+def disentangle_TRM(theta, renyi_alpha=0.5, debug_logger=debug_logging.DebugLogger(), **kwargs):
     """
     Disentangles the given wavefunction theta by minimizing the renyi-entropy, using the Trust Region method.
     The disentangling unitary is initialized with identity.
@@ -114,8 +112,8 @@ def disentangle_TRM(theta, renyi_alpha=0.5, debug_dict=None, **kwargs):
         wavefunction tensor to be disentangled.
     renyi_alpha : float, optional
         renyi alpha. Default: 0.5.
-    debug_dict : dictionary, optional
-        dictionary in which debug information is saved. Default: None.
+    debug_logger : DebugLogger instance, optional
+        DebugLogger instance managing debug logging. See 'src/utility/debug_logging.py' for more details.
     **kwargs
         remaining kwargs are passed into the initialization of trust_region_method.TrustRegionOptimizer()
         see src/utility/riemannian_optimization/trust_region_method.py for more information.
@@ -132,18 +130,18 @@ def disentangle_TRM(theta, renyi_alpha=0.5, debug_dict=None, **kwargs):
     construct_new_iterate = lambda U, _ : renyiAlphaIterate.RenyiAlphaIterateTRM(U, theta, renyi_alpha)
     manifold = stiefel_manifold.ComplexStiefelManifold(n=D1*D2, p=D1*D2, shape=U0.shape)
     trustRegionOptimizer = trust_region_method.TrustRegionOptimizer(manifold, construct_new_iterate, **kwargs)
-    log_debug_info = debug_levels.check_debug_level(debug_dict, debug_levels.DebugLevel.LOG_PER_ITERATION_DEBUG_INFO_DISENTANGLER_TRIPARTITE_DECOMPOSITION)
-    iterate, n, debug_info = trustRegionOptimizer.optimize(construct_new_iterate(U0, None), log_debug_info=log_debug_info, print_warnings=False)
-    if debug_levels.check_debug_level(debug_dict, debug_levels.DebugLevel.LOG_DISENTANGLER_TRIPARTITE_DECOMPOSITION_ITERATION_INFO):
-        utility.append_to_dict_list(debug_dict, "N_iters_disentangler", n)
-    if log_debug_info:
-        debug_dict["disentangler_iterates"] = debug_info[0]
-        debug_dict["disentangler_costs"] = debug_info[1]
-        debug_dict["disentangler_deltas"] = debug_info[2]
-        debug_dict["disentangler_tCG_iters"] = debug_info[3]
+    iterate, n, debug_info = trustRegionOptimizer.optimize(construct_new_iterate(U0, None), log_debug_info=debug_logger.disentangling_log_info_per_iteration, log_iterates=debug_logger.disentangling_log_iterates, print_warnings=False)
+    if debug_logger.disentangling_log_info:
+        debug_logger.append_to_log_list(("disentangler_info", "N_iters"), n)
+    if debug_logger.disentangling_log_info_per_iteration:
+        debug_logger.append_to_log_list(("disentangler_info", "costs"), debug_info[0])
+        debug_logger.append_to_log_list(("disentangler_info", "deltas"), debug_info[1])
+        debug_logger.append_to_log_list(("disentangler_info", "N_iters_tCG"), debug_info[2])
+    if debug_logger.disentangling_log_iterates:
+        debug_logger.append_to_log_list(("disentangler_info", "iterates"), debug_info[3])
     return iterate
 
-def disentangle_approx_TRM(theta, chi, renyi_alpha=0.5, N_iters_svd=2, eps_svd=1e-5, N_iters_svd_initial=2, debug_dict=None, **kwargs):
+def disentangle_approx_TRM(theta, chi, renyi_alpha=0.5, N_iters_svd=2, eps_svd=1e-5, N_iters_svd_initial=2, debug_logger=debug_logging.DebugLogger(), **kwargs):
     """
     Disentangles the given wavefunction theta by minimizing the renyi-entropy, using the Trust Region method
     with an approximate cost function. The disentangling unitary is initialized with identity.
@@ -166,8 +164,8 @@ def disentangle_approx_TRM(theta, chi, renyi_alpha=0.5, N_iters_svd=2, eps_svd=1
     N_iters_svd_initial : int or None, optional
         number of iterations the qr splitting algorithm is run for the initial iterate.
         Generally should be equal or larger than N_iters_svd. Default: 2.
-    debug_dict : dictionary, optional
-        dictionary in which debug information is saved. Default: None.
+    debug_logger : DebugLogger instance, optional
+        DebugLogger instance managing debug logging. See 'src/utility/debug_logging.py' for more details.
     **kwargs
         remaining kwargs are passed into the initialization of trust_region_method.TrustRegionOptimizer()
         see src/utility/riemannian_optimization/trust_region_method.py for more information.
@@ -184,18 +182,18 @@ def disentangle_approx_TRM(theta, chi, renyi_alpha=0.5, N_iters_svd=2, eps_svd=1
     construct_new_iterate = lambda U, old_iterate : renyiAlphaIterate.RenyiAlphaIterateApproxTRM(U, theta, renyi_alpha, chi_max=chi, N_iters_svd=N_iters_svd, eps_svd=eps_svd, old_iterate=old_iterate)
     manifold = stiefel_manifold.ComplexStiefelManifold(n=D1*D2, p=D1*D2, shape=U0.shape)
     trustRegionOptimizer = trust_region_method.TrustRegionOptimizer(manifold, construct_new_iterate, **kwargs)
-    log_debug_info = debug_levels.check_debug_level(debug_dict, debug_levels.DebugLevel.LOG_PER_ITERATION_DEBUG_INFO_DISENTANGLER_TRIPARTITE_DECOMPOSITION)
-    iterate, n, debug_info = trustRegionOptimizer.optimize(renyiAlphaIterate.RenyiAlphaIterateApproxTRM(U0, theta, chi_max=chi, N_iters_svd=N_iters_svd_initial, eps_svd=eps_svd, old_iterate=None), log_debug_info=log_debug_info, print_warnings=False)
-    if debug_levels.check_debug_level(debug_dict, debug_levels.DebugLevel.LOG_DISENTANGLER_TRIPARTITE_DECOMPOSITION_ITERATION_INFO):
-        utility.append_to_dict_list(debug_dict, "N_iters_disentangler", n)
-    if log_debug_info:
-        debug_dict["disentangler_iterates"] = debug_info[0]
-        debug_dict["disentangler_costs"] = debug_info[1]
-        debug_dict["disentangler_deltas"] = debug_info[2]
-        debug_dict["disentangler_tCG_iters"] = debug_info[3]
+    iterate, n, debug_info = trustRegionOptimizer.optimize(renyiAlphaIterate.RenyiAlphaIterateApproxTRM(U0, theta, chi_max=chi, N_iters_svd=N_iters_svd_initial, eps_svd=eps_svd, old_iterate=None), log_debug_info=debug_logger.disentangling_log_info_per_iteration, log_iterates=debug_logger.disentangling_log_iterates, print_warnings=False)
+    if debug_logger.disentangling_log_info:
+        debug_logger.append_to_log_list(("disentangler_info", "N_iters"), n)
+    if debug_logger.disentangling_log_info_per_iteration:
+        debug_logger.append_to_log_list(("disentangler_info", "costs"), debug_info[0])
+        debug_logger.append_to_log_list(("disentangler_info", "deltas"), debug_info[1])
+        debug_logger.append_to_log_list(("disentangler_info", "N_iters_tCG"), debug_info[2])
+    if debug_logger.disentangling_log_iterates:
+        debug_logger.append_to_log_list(("disentangler_info", "iterates"), debug_info[3])
     return iterate
 
-def disentangle(theta, renyi_alpha=2.0, method="power_iteration", debug_dict=None, **kwargs):
+def disentangle(theta, renyi_alpha=2.0, method="power_iteration", debug_logger=debug_logging.DebugLogger(), **kwargs):
     """
     Disentangles the given wavefunction theta by minimizing the renyi alpha entropy.
 
@@ -207,8 +205,8 @@ def disentangle(theta, renyi_alpha=2.0, method="power_iteration", debug_dict=Non
         renyi alpha. Default: 0.5.
     method : str, one of {"power_iteration", "trm", "cg"}, optional
         method used to minimize the entropy.
-    debug_dict : dictionary, optional
-        dictionary in which debug information is saved. Default: None.
+    debug_logger : DebugLogger instance, optional
+        DebugLogger instance managing debug logging. See 'src/utility/debug_logging.py' for more details.
     **kwargs
         remaining kwargs are passed into the respective method chosen with method.
         See the different called functions for more information.
@@ -221,15 +219,15 @@ def disentangle(theta, renyi_alpha=2.0, method="power_iteration", debug_dict=Non
     if method == "power_iteration":
         if renyi_alpha!=2.0:
             raise NotImplementedError(f"disentangling method \"power_iteration\" only works for minimizing renyi-2 entropy, not for alpha={renyi_alpha}!")
-        return disentangle_renyi_2.disentangle(theta, debug_dict=debug_dict, **kwargs)
+        return disentangle_renyi_2.disentangle(theta, debug_logger=debug_logger, **kwargs)
     elif method == "trm":
-        return disentangle_TRM(theta, renyi_alpha=renyi_alpha, debug_dict=debug_dict, **kwargs)
+        return disentangle_TRM(theta, renyi_alpha=renyi_alpha, debug_logger=debug_logger, **kwargs)
     elif method == "cg":    
-        return disentangle_CG(theta, renyi_alpha=renyi_alpha, debug_dict=debug_dict, **kwargs)
+        return disentangle_CG(theta, renyi_alpha=renyi_alpha, debug_logger=debug_logger, **kwargs)
     else:
         raise NotImplementedError(f"disentangling method \"{method}\" is not implemented for renyi_alpha disentangling!")
 
-def disentangle_approx(theta, chi, renyi_alpha=2.0, method="trm", debug_dict=None, **kwargs):
+def disentangle_approx(theta, chi, renyi_alpha=2.0, method="trm", debug_logger=debug_logging.DebugLogger(), **kwargs):
     """
     Disentangles the given wavefunction theta by minimizing an approximation of the renyi alpha entropy.
 
@@ -244,8 +242,8 @@ def disentangle_approx(theta, chi, renyi_alpha=2.0, method="trm", debug_dict=Non
         renyi alpha. Default: 0.5.
     method : str, one of {"trm", "cg"}, optional
         method used to minimize the entropy.
-    debug_dict : dictionary, optional
-        dictionary in which debug information is saved. Default: None.
+    debug_logger : DebugLogger instance, optional
+        DebugLogger instance managing debug logging. See 'src/utility/debug_logging.py' for more details.
     **kwargs
         remaining kwargs are passed into the respective method chosen with method.
         See the different called functions for more information.
@@ -256,8 +254,8 @@ def disentangle_approx(theta, chi, renyi_alpha=2.0, method="trm", debug_dict=Non
         final disentangling unitary after optimization
     """
     if method == "trm":
-        return disentangle_approx_TRM(theta, chi, renyi_alpha=renyi_alpha, debug_dict=debug_dict, **kwargs)
+        return disentangle_approx_TRM(theta, chi, renyi_alpha=renyi_alpha, debug_logger=debug_logger, **kwargs)
     elif method == "cg":    
-        return disentangle_approx_CG(theta, chi, renyi_alpha=renyi_alpha, debug_dict=debug_dict, **kwargs)
+        return disentangle_approx_CG(theta, chi, renyi_alpha=renyi_alpha, debug_logger=debug_logger, **kwargs)
     else:
         raise NotImplementedError(f"disentangling method \"{method}\" is not implemented for approximate renyi alpha disentangling!")

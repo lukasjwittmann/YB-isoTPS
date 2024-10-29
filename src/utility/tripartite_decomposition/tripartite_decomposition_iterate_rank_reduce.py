@@ -1,9 +1,9 @@
 import numpy as np
 from .. import utility
-from .. import debug_levels
 from ..disentangle import disentangle
+from .. import debug_logging
 
-def tripartite_decomposition(T, D1, D2, chi, N_iters=100, initialize="polar", N_iters_pre_disentangler=200, N_iters_inner=5, debug_dict=None):
+def tripartite_decomposition(T, D1, D2, chi, N_iters=100, initialize="polar", N_iters_pre_disentangler=200, N_iters_inner=5, debug_logger=debug_logging.DebugLogger()):
     """
     Performs the tripartite decomposition by iterating over two tensors while optimizing them and enforcing a 
     low-rank constraint on the second tensor through truncated SVD.
@@ -30,8 +30,8 @@ def tripartite_decomposition(T, D1, D2, chi, N_iters=100, initialize="polar", N_
     N_iters_inner : int or None, optional
         number of iterations for approximating the SVD using the QR iteration power method.
         If this is set to None, a full SVD is used instead. Default: 5.
-    debug_dict : dictionary, optional
-        dictionary in which debug information is saved. Default: None.
+    debug_logger : DebugLogger instance, optional
+        DebugLogger instance managing debug logging. See 'src/utility/debug_logging.py' for more details.
 
     Returns
     -------
@@ -79,11 +79,8 @@ def tripartite_decomposition(T, D1, D2, chi, N_iters=100, initialize="polar", N_
         _, W = disentangle.initialize_disentangle(W, init_U=initialize, N_iters_pre_disentangler=N_iters_pre_disentangler)
     W = W.reshape(chi_2*D1, D2*chi_3)
     # logging of debug information
-    log_debug_info = debug_levels.check_debug_level(debug_dict, debug_levels.DebugLevel.LOG_PER_ITERATION_DEBUG_INFO_DISENTANGLER_TRIPARTITE_DECOMPOSITION)
-    if log_debug_info:
-        As = []
-        Bs = []
-        Cs = []
+    if debug_logger.tripartite_decomposition_log_iterates:
+        iterates = []
     C0 = None
     # main loop
     for n in range(N_iters - 1):
@@ -104,25 +101,24 @@ def tripartite_decomposition(T, D1, D2, chi, N_iters=100, initialize="polar", N_
         W = W.transpose(0, 2, 3, 1) # D1, D2, chi_2, chi_3 -> D1, chi_2, chi_3, D2
         W = W.reshape(D1*chi_2, chi_3*D2)
         # log debug information
-        if log_debug_info:
+        if debug_logger.tripartite_decomposition_log_iterates:
             if N_iters_inner is None:
                 B_temp, C_temp = utility.split_matrix_svd(W, chi)
             else:
                 B_temp, C_temp, _, _ = utility.split_matrix_iterate_QR(W, chi, N_iters=N_iters_inner, C0=C0)
-            As.append(A.reshape(chi_1, D1, D2))
-            Bs.append(B_temp.reshape(D1, chi_2, chi))
-            Cs.append(C_temp.reshape(chi, chi_3, D2).transpose(2, 0, 1) / np.linalg.norm(C_temp))
+            iterates.append({
+                "A": A.reshape(chi_1, D1, D2), 
+                "B": B_temp.reshape(D1, chi_2, chi), 
+                "C": C_temp.reshape(chi, chi_3, D2).transpose(2, 0, 1) / np.linalg.norm(C_temp)})
     # finalize
     if N_iters_inner is None:
         B, C = utility.split_matrix_svd(W, chi)
     else:
         B, C, _, _ = utility.split_matrix_iterate_QR(W, chi, N_iters=N_iters_inner, C0=C0)
     # debug logging
-    if debug_levels.check_debug_level(debug_dict, debug_levels.DebugLevel.LOG_DISENTANGLER_TRIPARTITE_DECOMPOSITION_ITERATION_INFO):
-        utility.append_to_dict_list(debug_dict, "N_iters_tripartite_decomposition", N_iters)
+    if debug_logger.tripartite_decomposition_log_iterates:
+        debug_logger.append_to_log_list(("tripartite_decomopsition_info", "iterates"), iterates)
+    if debug_logger.tripartite_decomposition_log_info:
+        debug_logger.append_to_log_list(("tripartite_decomopsition_info", "N_iters"), N_iters)
     # return results
-    if log_debug_info:
-        debug_dict["tripartite_decomposition_iterates_A"] = As
-        debug_dict["tripartite_decomposition_iterates_B"] = Bs
-        debug_dict["tripartite_decomposition_iterates_C"] = Cs
     return A.reshape(chi_1, D1, D2), B.reshape(D1, chi_2, chi), C.reshape(chi, chi_3, D2).transpose(2, 0, 1) / np.linalg.norm(C)

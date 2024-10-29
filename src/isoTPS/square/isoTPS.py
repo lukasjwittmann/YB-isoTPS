@@ -2,11 +2,12 @@ import numpy as np
 import time
 import matplotlib.pyplot as plt
 from ...utility import utility
-from ...utility import debug_levels
+from ...utility import debug_logging
 from . import yang_baxter_move
 from . import expectation_values
 from . import tebd
 from .. import isoTPS
+from . import column_optimization
 
 class isoTPS_Square(isoTPS.isoTPS):
 
@@ -39,11 +40,9 @@ class isoTPS_Square(isoTPS.isoTPS):
         states : list of np.ndarray of shape (d,)
             list of local states. The full many-body state is formed by the kronecker product of all states in the list.
         """
-        # Temporarily set debug level to zero to avoid printing unnecessary debug information during initialization
-        debug_level = self.debug_level
-        self.debug_level = debug_levels.DebugLevel.NO_DEBUG
-        if self.debug_dict is not None:
-            self.debug_dict["debug_level"] = self.debug_level
+        # Temporarily set debug level to zero to avoid collecting unnecessary debug information during initialization
+        temp_debug_logger = self.debug_logger
+        self.debug_logger = debug_logging.DebugLogger()
         def _initialize_T_product_state(state=np.array([1.0, 0.0], dtype=np.complex128)):
             T = np.zeros((state.size, 1, 1, 1, 1), dtype=np.complex128)
             T[:, 0, 0, 0, 0] = state[:]
@@ -63,9 +62,7 @@ class isoTPS_Square(isoTPS.isoTPS):
             self.move_ortho_surface_left(force=True)
         self.move_ortho_surface_right(force=True)
         assert(self.ortho_surface == 0)
-        self.debug_level = debug_level
-        if self.debug_dict is not None:
-            self.debug_dict["debug_level"] = self.debug_level
+        self.debug_logger = temp_debug_logger
 
     def plot(self, T_colors=None, ax=None, figsize_y=8.0, T_tensor_scale=1.0, W_tensor_scale=1.0, show_bond_dims=True):
         """
@@ -347,8 +344,8 @@ class isoTPS_Square(isoTPS.isoTPS):
         Returns
         -------
         error : float
-            the error of the YB move. This is only returned if the debug level is equal or larger than
-            LOG_PER_SITE_ERROR_AND_WALLTIME. Else, -np.float("inf") is returned as error.
+            the error of the YB move. This is only returned if debug_logger.log_approximate_column_error_yb is set to true.
+        
         """
         # Check if W1 or W2 are the ortho_center
         assert(W1_index == self.ortho_center or W2_index == self.ortho_center)
@@ -379,22 +376,22 @@ class isoTPS_Square(isoTPS.isoTPS):
         else:
             assert False, f'Unknown ordering mode \"{self.ordering_mode}\"'
         # Save environment tensors (debug)
-        if debug_levels.check_debug_level(self.debug_dict, debug_levels.DebugLevel.LOG_YB_TEBD_ENVIRONMENTS):
-            utility.append_to_dict_list(self.debug_dict, "yb_environments", (W1, W2, T))
+        if self.debug_logger.log_yb_move_environments:
+            self.debug_logger.append_to_log_list(("yb_environments"), {"W1": None if W1 is None else W1.copy(), "W2": None if W2 is None else W2.copy(), "T": T.copy()})
         # Stop time per YB move (debug)
-        if debug_levels.check_debug_level(self.debug_dict, debug_levels.DebugLevel.LOG_PER_SITE_ERROR_AND_WALLTIME):
+        if self.debug_logger.log_algorithm_walltimes or self.debug_logger.log_yb_move_walltimes:
             start = time.time()
         # Perform YB move subroutine
-        Wm1_prime, W_prime, T_prime, error = yang_baxter_move.yang_baxter_move(W1, W2, T, self.D_max, self.chi_max, options=self.yb_options, debug_dict=self.debug_dict, larger_bond_direction=larger_bond_direction)
+        Wm1_prime, W_prime, T_prime, error = yang_baxter_move.yang_baxter_move(W1, W2, T, self.D_max, self.chi_max, options=self.yb_options, debug_logger=self.debug_logger, larger_bond_direction=larger_bond_direction)
         # Save error and walltime (debug)
-        if debug_levels.check_debug_level(self.debug_dict, debug_levels.DebugLevel.LOG_PER_SITE_ERROR_AND_WALLTIME):
+        if self.debug_logger.log_algorithm_walltimes or self.debug_logger.log_yb_move_walltimes:
             end = time.time()
-            x, y, p = self.get_position(T_index)
-            self.debug_dict["errors_yb"][y][x*2+p-1] += error
-            self.debug_dict["times_yb"][y][x*2+p-1] += end-start
-            if debug_levels.check_debug_level(self.debug_dict, debug_levels.DebugLevel.LOG_CONSECUTIVE_ERROR_AND_WALLTIME):
-                utility.append_to_dict_list(self.debug_dict, "errors_yb_consecutive", error)
-                utility.append_to_dict_list(self.debug_dict, "times_yb_consecutive", end-start)
+        if self.debug_logger.log_yb_move_errors:
+            self.debug_logger.append_to_log_list(("yb_move_errors"), error)
+        if self.debug_logger.log_yb_move_walltimes:
+            self.debug_logger.append_to_log_list(("yb_move_walltimes"), end-start)
+        if self.debug_logger.log_algorithm_walltimes:
+            self.time_counter_yb_move += end-start
         # Flip tensors back if necessary
         if flip == True:
             Wm1_prime = utility.flip_W(Wm1_prime)
@@ -432,6 +429,16 @@ class isoTPS_Square(isoTPS.isoTPS):
         x = self.ortho_surface // 2
         p = self.ortho_surface % 2
         column_error = 0
+        # If we want to perform a variational column optimization, we need to store the column's tensors before doing any YB moves
+        Ts_before_YB = []
+        Ws_before_YB = []
+        if self.ortho_surface > 0 and (self.perform_variational_column_optimization or self.debug_logger.log_column_error_yb_before_variational_optimization):
+            if p == 0:
+                Ts_before_YB = [utility.flip_T_square(self.Ts[self.get_index(x, y, 0)].copy()) for y in range(self.Ly)]
+                Ws_before_YB = [None] + [utility.flip_W(W.copy()) for W in self.Ws]
+            else:
+                Ts_before_YB = [utility.flip_T_square(self.Ts[self.get_index(x, y, 1)].copy()) for y in range(self.Ly)]
+                Ws_before_YB = [utility.flip_W(W.copy()) for W in self.Ws] + [None]
         if move_upwards:
             # First, move the ortho center to the bottom
             self.move_ortho_center_to(0)
@@ -461,8 +468,38 @@ class isoTPS_Square(isoTPS.isoTPS):
                     self.move_ortho_center_down()
                     column_error += self.perform_yang_baxter(self.ortho_center - 1, self.ortho_center, self.get_index(x, y, 1), flip=True, arrows_should_point_up=False)
         self.ortho_surface -= 1
-        if debug_levels.check_debug_level(self.debug_dict, debug_levels.DebugLevel.LOG_COLUMN_ERRORS):
-            utility.append_to_dict_list(self.debug_dict, "column_errors_yb", column_error)
+        if self.debug_logger.log_approximate_column_error_yb:
+            self.debug_logger.append_to_log_list("approximate_column_errors", column_error)
+        # Optionally perform variational column optimization and/or log the column error
+        if self.ortho_surface > 0 and self.perform_variational_column_optimization or self.debug_logger.log_column_error_yb_before_variational_optimization:
+            Ts_after_YB = []
+            Ws_after_YB = []
+            ortho_center = self.ortho_center
+            if p == 0:
+                Ts_after_YB = [utility.flip_T_square(self.Ts[self.get_index(x, y, 0)].copy()) for y in range(self.Ly)]
+                Ws_after_YB = [None] + [utility.flip_W(W.copy()) for W in self.Ws]
+                ortho_center += 1
+            else:
+                Ts_after_YB = [utility.flip_T_square(self.Ts[self.get_index(x, y, 1)].copy()) for y in range(self.Ly)]
+                Ws_after_YB = [utility.flip_W(W.copy()) for W in self.Ws] + [None]
+            optimizer = column_optimization.variationalColumnOptimizer(Ts_before_YB, Ws_before_YB, Ts_after_YB, Ws_after_YB, ortho_center, debug_logger=self.debug_logger)
+            if self.perform_variational_column_optimization:
+                # Optimize column
+                optimizer.optimize_column(**self.variational_column_optimization_options)
+                if p == 0:
+                    for i in range(2*self.Ly-1):
+                        self.Ws[i] = utility.flip_W(optimizer.Ws[i+1])
+                    for y in range(self.Ly):
+                        self.Ts[self.get_index(x, y, 0)] = utility.flip_T_square(optimizer.Ts[y])
+                else:
+                    for i in range(2*self.Ly-1):
+                        self.Ws[i] = utility.flip_W(optimizer.Ws[i])
+                    for y in range(self.Ly):
+                        self.Ts[self.get_index(x, y, 1)] = utility.flip_T_square(optimizer.Ts[y])
+            else:
+                # Just compute the error for debug logging
+                self.debug_logger.append_to_log_list("column_errors_yb_before_variational_optimization", optimizer.compute_error())
+
 
     def move_ortho_surface_right(self, force=False, move_upwards=True):
         """
@@ -484,6 +521,17 @@ class isoTPS_Square(isoTPS.isoTPS):
         x = self.ortho_surface // 2
         p = self.ortho_surface % 2
         column_error = 0
+        # If we want to perform a variational column optimization or compute the column error, 
+        # we need to store the column's tensors before doing any YB moves
+        Ts_before_YB = []
+        Ws_before_YB = []
+        if self.ortho_surface < 2 * self.Lx - 2 and (self.perform_variational_column_optimization or self.debug_logger.log_column_error_yb_before_variational_optimization):
+            if p == 0:
+                Ts_before_YB = [self.Ts[self.get_index(x, y, 1)].copy() for y in range(self.Ly)]
+                Ws_before_YB = [W.copy() for W in self.Ws] + [None]
+            else:
+                Ts_before_YB = [self.Ts[self.get_index(x+1, y, 0)].copy() for y in range(self.Ly)]
+                Ws_before_YB = [None] + [W.copy() for W in self.Ws]
         if move_upwards:
             # First, move the ortho center to the bottom
             self.move_ortho_center_to(0)
@@ -513,8 +561,37 @@ class isoTPS_Square(isoTPS.isoTPS):
                     self.move_ortho_center_down()
                 column_error += self.perform_yang_baxter(None, self.ortho_center, self.get_index(x + 1, 0, 0), flip=False, arrows_should_point_up=True)
         self.ortho_surface += 1
-        if debug_levels.check_debug_level(self.debug_dict, debug_levels.DebugLevel.LOG_COLUMN_ERRORS):
-            utility.append_to_dict_list(self.debug_dict, "column_errors_yb", column_error)
+        if self.debug_logger.log_approximate_column_error_yb:
+            self.debug_logger.append_to_log_list("approximate_column_errors", column_error)
+        # Optionally perform variational column optimization and/or log the column error
+        if self.ortho_surface < 2*self.Ly - 2 and self.perform_variational_column_optimization or self.debug_logger.log_column_error_yb_before_variational_optimization:
+            Ts_after_YB = []
+            Ws_after_YB = []
+            ortho_center = self.ortho_center
+            if p == 0:
+                Ts_after_YB = [self.Ts[self.get_index(x, y, 1)].copy() for y in range(self.Ly)]
+                Ws_after_YB = [W.copy() for W in self.Ws] + [None]
+            else:
+                Ts_after_YB = [self.Ts[self.get_index(x+1, y, 0)].copy() for y in range(self.Ly)]
+                Ws_after_YB = [None] + [W.copy() for W in self.Ws]
+                ortho_center += 1
+            optimizer = column_optimization.variationalColumnOptimizer(Ts_before_YB, Ws_before_YB, Ts_after_YB, Ws_after_YB, ortho_center, debug_logger=self.debug_logger)
+            if self.perform_variational_column_optimization:
+                # Optimize column
+                optimizer.optimize_column(**self.variational_column_optimization_options)
+                if p == 0:
+                    for i in range(2*self.Ly-1):
+                        self.Ws[i] = optimizer.Ws[i]
+                    for y in range(self.Ly):
+                        self.Ts[self.get_index(x, y, 1)] = optimizer.Ts[y]
+                else:
+                    for i in range(2*self.Ly-1):
+                        self.Ws[i] = optimizer.Ws[i+1]
+                    for y in range(self.Ly):
+                        self.Ts[self.get_index(x+1, y, 0)] = optimizer.Ts[y]
+            else:
+                # Just compute the error for debug logging
+                self.debug_logger.append_to_log_list("column_errors_yb_before_variational_optimization", optimizer.compute_error())
 
     def get_environment_twosite(self):
         """
@@ -822,29 +899,31 @@ class isoTPS_Square(isoTPS.isoTPS):
         Returns
         -------
         error : float
-            the error of the YB move. If the debug level is smaller than LOG_PER_SITE_ERROR_AND_WALLTIME,
+            the error of the local TEBD update. If self.debug_logger.log_approximate_column_error_tebd == False,
             -np.float("inf") is returned instead.
         """
-        log_time_and_error = debug_levels.check_debug_level(self.debug_dict, debug_levels.DebugLevel.LOG_PER_SITE_ERROR_AND_WALLTIME)
         # determine index into U_bonds
         index = self.ortho_surface * (2 * self.Ly - 1) + self.ortho_center
         # retreive environment
         T1, T2, Wm1, W, Wp1 = self.get_environment_twosite()
         # Save environment tensors (debug)
-        if debug_levels.check_debug_level(self.debug_dict, debug_levels.DebugLevel.LOG_YB_TEBD_ENVIRONMENTS):
-            utility.append_to_dict_list(self.debug_dict, "tebd_environments", (T1, T2, Wm1, W, Wp1, U_bonds[index]))
-        # perform TEBD step
-        if log_time_and_error:
+        if self.debug_logger.log_local_tebd_update_environments:
+            self.debug_logger.append_to_log_list("local_tebd_update_environments", {"T1": T1.copy(), "T2": T2.copy(), "Wm1": None if Wm1 is None else Wm1.copy(), "W": None if W is None else W.copy(), "Wp1": None if Wp1 is None else Wp1.copy()})
+        # Stop time (debug)
+        if self.debug_logger.log_algorithm_walltimes or self.log_local_tebd_update_walltimes:
             start = time.time()
-        T1, T2, Wm1, W, Wp1, error = tebd.tebd_step(T1, T2, Wm1, W, Wp1, U_bonds[index], self.chi_max, debug_dict=self.debug_dict, **self.tebd_options)
+        # perform TEBD step
+        T1, T2, Wm1, W, Wp1, error = tebd.tebd_step(T1, T2, Wm1, W, Wp1, U_bonds[index], self.chi_max, debug_logger=self.debug_logger, **self.tebd_options)
         error = np.real_if_close(error)
-        if log_time_and_error:
+        # log error and walltimes
+        if self.debug_logger.log_algorithm_walltimes or self.log_local_tebd_update_walltimes:
             end = time.time()
-            self.debug_dict["times_tebd"][self.ortho_center][self.ortho_surface] += end-start
-            self.debug_dict["errors_tebd"][self.ortho_center][self.ortho_surface] += np.real(error) # Sometimes the error still has a very small imaginary part due to numerical errors.
-            if debug_levels.check_debug_level(self.debug_dict, debug_levels.DebugLevel.LOG_CONSECUTIVE_ERROR_AND_WALLTIME):
-                utility.append_to_dict_list(self.debug_dict, "errors_tebd_consecutive", error)
-                utility.append_to_dict_list(self.debug_dict, "times_tebd_consecutive", end-start)
+        if self.debug_logger.log_local_tebd_update_errors:
+            self.debug_logger.append_to_log_list("local_tebd_update_errors", error)
+        if self.debug_logger.log_local_tebd_update_walltimes:
+            self.debug_logger.append_to_log_list("local_tebd_update_walltimes", end-start)
+        if self.debug_logger.log_algorithm_walltimes:
+            self.time_counter_tebd_local_update += end-start
         # Update environment
         self.set_environment_twosite(T1, T2, Wm1, W, Wp1)
         return error
@@ -883,8 +962,8 @@ class isoTPS_Square(isoTPS.isoTPS):
                 column_error += self.perform_TEBD_at_ortho_center(U_bonds)
                 self.move_ortho_center_down()
                 self.move_ortho_center_down()
-        if debug_levels.check_debug_level(self.debug_dict, debug_levels.DebugLevel.LOG_COLUMN_ERRORS):
-            utility.append_to_dict_list(self.debug_dict, "column_errors_tebd", column_error)
+        if self.debug_logger.log_approximate_column_error_tebd:
+            self.debug_logger.append_to_log_list("approximate_column_error_tebd", column_error)
 
     def perform_TEBD_along_ortho_surface_chain(self, U_bonds, move_upwards=True):
         """
@@ -925,8 +1004,8 @@ class isoTPS_Square(isoTPS.isoTPS):
             for _ in range(2*self.Ly-1):
                 column_error += self.perform_TEBD_at_ortho_center(U_bonds)
                 self.move_ortho_center_down() 
-        if debug_levels.check_debug_level(self.debug_dict, debug_levels.DebugLevel.LOG_COLUMN_ERRORS):
-            utility.append_to_dict_list(self.debug_dict, "column_errors_tebd", column_error)
+        if self.debug_logger.log_approximate_column_error_tebd:
+            self.debug_logger.append_to_log_list("approximate_column_error_tebd", column_error)
 
     def perform_TEBD1(self, U_bonds, N_steps):
         """
@@ -941,6 +1020,7 @@ class isoTPS_Square(isoTPS.isoTPS):
             number of TEBD steps performed
         """
         for _ in range(N_steps):
+            self.reset_time_counters()
             # apply update on even surfaces
             self.move_ortho_surface_to(0)
             for _ in range(0, 2 * self.Lx - 1, 2):
@@ -954,6 +1034,12 @@ class isoTPS_Square(isoTPS.isoTPS):
                     self.perform_TEBD_along_ortho_surface_brickwall(U_bonds)
                     self.move_ortho_surface_left()
                     self.move_ortho_surface_left()
+            # Debug logging
+            if self.debug_logger.log_algorithm_walltimes:
+                self.debug_logger.append_to_log_list(("algorithm_walltimes", "yb_move"), self.time_counter_yb_move)
+                self.debug_logger.append_to_log_list(("algorithm_walltimes", "local_tebd_update"), self.time_counter_tebd_local_update)
+                self.debug_logger.append_to_log_list(("algorithm_walltimes", "variational_column_optimization"), self.time_counter_variational_column_optimization)
+
 
     def perform_TEBD2(self, U_bonds, N_steps):
         """
@@ -968,6 +1054,7 @@ class isoTPS_Square(isoTPS.isoTPS):
             number of TEBD steps performed
         """
         for _ in range(N_steps):
+            self.reset_time_counters()
             self.move_to(0, 0)
             for _ in range(2*self.Lx-1):
                 self.perform_TEBD_along_ortho_surface_chain(U_bonds, move_upwards=True)
@@ -975,6 +1062,11 @@ class isoTPS_Square(isoTPS.isoTPS):
             for _ in range(2*self.Lx-1):
                 self.perform_TEBD_along_ortho_surface_chain(U_bonds, move_upwards=False)
                 self.move_ortho_surface_left(move_upwards=True)
+            # Debug logging
+            if self.debug_logger.log_algorithm_walltimes:
+                self.debug_logger.append_to_log_list(("algorithm_walltimes", "yb_move"), self.time_counter_yb_move)
+                self.debug_logger.append_to_log_list(("algorithm_walltimes", "local_tebd_update"), self.time_counter_tebd_local_update)
+                self.debug_logger.append_to_log_list(("algorithm_walltimes", "variational_column_optimization"), self.time_counter_variational_column_optimization)
 
     def compute_singular_values_at_bond(self):
         """
