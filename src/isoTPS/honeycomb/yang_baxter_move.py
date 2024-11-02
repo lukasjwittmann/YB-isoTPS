@@ -1,7 +1,7 @@
 import numpy as np
 from ...utility import utility
 from ...utility.tripartite_decomposition import tripartite_decomposition
-from ...utility import debug_levels
+from ...utility import debug_logging
 
 def yang_baxter_move_1(W1, W2, T, D_max, debug_dict=None):
     """

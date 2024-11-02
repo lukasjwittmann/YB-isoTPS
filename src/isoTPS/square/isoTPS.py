@@ -27,7 +27,7 @@ class isoTPS_Square(isoTPS.isoTPS):
         copy : instance if class isoTPS_Square
             the copied isoTPS
         """
-        result = isoTPS_Square(self.Lx, self.Ly, D_max=self.D_max, chi_factor=self.chi_factor, chi_max=self.chi_max, d=self.d, shifting_options=self.shifting_options, yb_options=self.yb_options, tebd_options=self.tebd_options, ordering_mode=self.ordering_mode, debug_level=self.debug_level)
+        result = isoTPS_Square(self.Lx, self.Ly, D_max=self.D_max, chi_factor=self.chi_factor, chi_max=self.chi_max, d=self.d, shifting_options=self.shifting_options, yb_options=self.yb_options, tebd_options=self.tebd_options, ordering_mode=self.ordering_mode, perform_variational_column_optimization=self.perform_variational_column_optimization, variational_column_optimization_options=self.variational_column_optimization_options, debug_logger_options=self.debug_logger_options)
         result._init_as_copy(self)
         return result
 
@@ -910,13 +910,13 @@ class isoTPS_Square(isoTPS.isoTPS):
         if self.debug_logger.log_local_tebd_update_environments:
             self.debug_logger.append_to_log_list("local_tebd_update_environments", {"T1": T1.copy(), "T2": T2.copy(), "Wm1": None if Wm1 is None else Wm1.copy(), "W": None if W is None else W.copy(), "Wp1": None if Wp1 is None else Wp1.copy()})
         # Stop time (debug)
-        if self.debug_logger.log_algorithm_walltimes or self.log_local_tebd_update_walltimes:
+        if self.debug_logger.log_algorithm_walltimes or self.debug_logger.log_local_tebd_update_walltimes:
             start = time.time()
         # perform TEBD step
         T1, T2, Wm1, W, Wp1, error = tebd.tebd_step(T1, T2, Wm1, W, Wp1, U_bonds[index], self.chi_max, debug_logger=self.debug_logger, **self.tebd_options)
         error = np.real_if_close(error)
         # log error and walltimes
-        if self.debug_logger.log_algorithm_walltimes or self.log_local_tebd_update_walltimes:
+        if self.debug_logger.log_algorithm_walltimes or self.debug_logger.log_local_tebd_update_walltimes:
             end = time.time()
         if self.debug_logger.log_local_tebd_update_errors:
             self.debug_logger.append_to_log_list("local_tebd_update_errors", error)
