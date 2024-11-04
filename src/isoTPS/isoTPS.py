@@ -166,7 +166,7 @@ class isoTPS:
         self.ortho_surface = data["ortho_surface"]
         self.ortho_center = data["ortho_center"]
         if load_debug_log:
-            self.debug_logger.load_debug_log(data["debug_log"])
+            self.debug_logger.load_log_dict(data["debug_log"])
 
     def _init_as_copy(self, original_tps):
         """

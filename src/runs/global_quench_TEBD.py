@@ -8,7 +8,6 @@ from ..isoTPS.square.isoTPS import isoTPS_Square
 from ..isoTPS.honeycomb.isoTPS import isoTPS_Honeycomb
 from ..models import tfi
 from ..utility import utility
-from ..utility import debug_levels
 
 def perform_global_quench_run(tps_params, model_params, dt, N_steps, output_folder, tebd_order=2, lattice="square", initialize="spinup", initial_state=None, load_checkpoint=False):
     # Make sure parameters are in the correct format
@@ -75,8 +74,7 @@ def perform_global_quench_run(tps_params, model_params, dt, N_steps, output_fold
             tps.initialize_spinright()
         elif initialize == "product":
             tps.initialize_product_state(np.array(initial_state))
-        tps.reset_debug_dict()
-        tps.save_to_file(output_folder + "/tps_0.h5")
+        tps.save_to_file(output_folder + "/tps_0.h5", )
     else:
         append_to_log(f"Continuing from checkpoint n = {n_start}.")
         tps = isoTPS_Square.load_from_file(output_folder + f"/tps_{n_start}.h5")
@@ -91,7 +89,6 @@ def perform_global_quench_run(tps_params, model_params, dt, N_steps, output_fold
     #Es = [np.sum(tps.copy().compute_expectation_values_twosite(H_bonds))]
     for n in range(n_start, N_steps):
         append_to_log(f"Performing time step {n} ...")
-        tps.reset_debug_errors_and_times()
         start_TEBD = time.time()
         if tebd_order == 1:
             tps.perform_TEBD1(U_bonds, 1)
@@ -102,11 +99,16 @@ def perform_global_quench_run(tps_params, model_params, dt, N_steps, output_fold
         #E = np.sum(tps.copy().compute_expectation_values_twosite(H_bonds))
         #Es.append(E)
         append_to_log(f"Took {round(tebd_time, 3)} seconds.")#, energy = {E}.")
-        if debug_levels.check_debug_level(tps.debug_dict, debug_levels.DebugLevel.LOG_PER_SITE_ERROR_AND_WALLTIME):
-            append_to_log(f"Total time YB: {np.sum(tps.debug_dict['times_yb'])}")
-            append_to_log(f"Total time TEBD: {np.sum(tps.debug_dict['times_tebd'])}")
-            append_to_log(f"Error density YB: {np.sum(tps.debug_dict['errors_yb']) / N}")
-            append_to_log(f"Error density TEBD: {np.sum(tps.debug_dict['errors_tebd']) / N}")
+        if tps.debug_logger.log_algorithm_walltimes and  "algorithm_walltimes" in tps.debug_logger.log_dict:
+            if "local_tebd_update" in tps.debug_logger.log_dict["algorithm_walltimes"]:
+                temp = tps.debug_logger.log_dict["algorithm_walltimes"]["local_tebd_update"][-1]
+                append_to_log(f"Total time TEBD: {temp}")
+            if "yb_move" in tps.debug_logger.log_dict["algorithm_walltimes"]:
+                temp = tps.debug_logger.log_dict["algorithm_walltimes"]["yb_move"][-1]
+                append_to_log(f"Total time YB: {temp}")
+            if "variational_column_optimization" in tps.debug_logger.log_dict["algorithm_walltimes"]:
+                temp = tps.debug_logger.log_dict["algorithm_walltimes"]["variational_column_optimization"][-1]
+                append_to_log(f"Total time variational column optimization: {temp}")
         # save tps to file
         tps.save_to_file(output_folder + f"/tps_{n+1}.h5")
     end = time.time()
