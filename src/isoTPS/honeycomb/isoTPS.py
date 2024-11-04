@@ -3,7 +3,7 @@ import time
 import matplotlib.pyplot as plt
 import hdfdict
 from ...utility import utility
-from ...utility import debug_levels
+from ...utility import debug_logging
 from . import yang_baxter_move
 from . import expectation_values
 from . import tebd
@@ -12,7 +12,7 @@ from .. import shifting_ortho_center
 
 class isoTPS_Honeycomb(isoTPS.isoTPS):
 
-    def __init__(self, Lx, Ly, D_max=4, D_max_horizontal=None, chi_factor=6, chi_max=24, d=2, shifting_options={ "mode" : "svd" }, yb_options={ "mode" : "svd" }, tebd_options={ "mode" : "svd" }, ordering_mode="edges", debug_level=debug_levels.DebugLevel.NO_DEBUG):
+    def __init__(self, Lx, Ly, D_max=4, D_max_horizontal=None, chi_factor=6, chi_max=24, d=2, shifting_options={ "mode" : "svd" }, yb_options={ "mode" : "svd" }, tebd_options={ "mode" : "svd" }, ordering_mode="edges", debug_level=None): # TODO: FIX debug logging
         """
         Initializes the isoTPS.
 

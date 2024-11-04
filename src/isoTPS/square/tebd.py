@@ -197,7 +197,8 @@ def tebd_step(T1, T2, Wm1, W, Wp1, U, chi_max, mode="svd", debug_logger=debug_lo
     Wp1_prime : np.ndarray of shape (lp1, up1, rp1, dp1') = (lp1, up1, lu2, u') or None
         part of the updated two-site wavefunction
     error : float
-        error of applying the time evolution operator, or -float("inf") if debug_logging.log_local_tebd_update_errors is set to false.
+        error of applying the time evolution operator, or -float("inf") if debug_logger.log_local_tebd_update_errors and
+        debug_logger.log_approximate_column_error_tebd are set to false.
     """
     if mode == "svd":
         T1_prime, T2_prime, Wm1_prime, W_prime, Wp1_prime = tebd_step_svd(T1, T2, Wm1, W, Wp1, U, chi_max, **kwargs)
@@ -205,7 +206,7 @@ def tebd_step(T1, T2, Wm1, W, Wp1, U, chi_max, mode="svd", debug_logger=debug_lo
         T1_prime, T2_prime, Wm1_prime, W_prime, Wp1_prime = tebd_step_iterate_polar(T1, T2, Wm1, W, Wp1, U, debug_logger=debug_logger, **kwargs)
     else:
         raise NotImplementedError(f'tebd_step not implemented for mode {mode}')
-    if debug_logger.log_local_tebd_update_errors:
+    if debug_logger.log_local_tebd_update_errors or debug_logger.log_approximate_column_error_tebd:
         error = _compute_error(T1, T2, Wm1, W, Wp1, T1_prime, T2_prime, Wm1_prime, W_prime, Wp1_prime, U)
         return T1_prime, T2_prime, Wm1_prime, W_prime, Wp1_prime, error
 

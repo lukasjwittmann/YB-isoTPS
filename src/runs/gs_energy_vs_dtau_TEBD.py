@@ -2,22 +2,21 @@ import numpy as np
 from ..isoTPS.square.isoTPS import isoTPS_Square
 from ..isoTPS.honeycomb.isoTPS import isoTPS_Honeycomb
 from ..utility import utility
-from ..utility import debug_levels
 from ..models import tfi
 import time
 import h5py
 import hdfdict
 import traceback
 
-def perform_gs_energy_vs_dtau_run(tps_params, model_params, dtaus, dtau_index, N_steps, tebd_order=2, lattice="square", initialize="spinup", L=None, output_filename=None):
+def perform_gs_energy_vs_dtau_run(tps_params, model_params, dtaus, dtau_index, N_steps, tebd_order=2, lattice="square", initialize="spinup", L=None, model=tfi.TFI, output_filename=None):
     """
     Computes one data point of a "TEBD ground state energy vs dtau" plot. Because the YB move injects a small error when moving around
     the orthogonality surface, the energy of the ground state we are able to reach is limited. There is a "competition" between TEBD error
     and YB error: TEBD error is smaller for small dtau, but the YB error rises because more sweeps are necessary for convergence. Thus there
-    exists an optimal dtau, for which we can achieve the minimal ground state energy. The run works as follows: Given an ordered list of 
-    timesteps dtau and an index dtau_index, TEBD is computed for all dtau < dtau[dtau_index], where we skip to the next dtau if the energy 
-    increases, but evolve for a maximum of N_steps. Finally, TEBD is computed for N_steps with dtau[dtau_index], where we do not skip.
-    The model used is the transverse field Ising model.
+    exists an optimal dtau, for which we can achieve the minimal ground state energy at a given maximum bond dimension. The run works as 
+    follows: Given an ordered list of timesteps dtau and an index dtau_index, TEBD is computed for all dtau < dtau[dtau_index], where we 
+    skip to the next dtau if the energy increases, but evolve for a maximum of N_steps. Finally, TEBD is computed for N_steps with 
+    dtau[dtau_index], where we do not skip.
 
     Parameters
     ----------
@@ -25,7 +24,7 @@ def perform_gs_energy_vs_dtau_run(tps_params, model_params, dtaus, dtau_index, N
         dictionary passed as keyword arguments into the constructor of isoTPS, see "src/isoTPS/square/isoTPS.py" or
         "src/isoTPS/honeycomb/isoTPS.py" for more detauls.
     model_params : dict
-        dictionary specifying the model, in this case the g and J parameters for the TFI model.
+        dictionary specifying the model parameters, e.g. g and J parameters for the TFI model.
     dtaus : list of float
         TEBD time steps.
     dtau_index : int
@@ -41,6 +40,8 @@ def perform_gs_energy_vs_dtau_run(tps_params, model_params, dtaus, dtau_index, N
     L : int or None, optional
         if this is not None, both Lx and Ly of the lattice are set to L.
         Else Lx and Ly are expected in tps_params. Default: None.
+    model : Model class, optional
+        The model used for generating the Hamiltonian. Default: tfi.TFI (the transverse field Ising model).
     output_filename : str or None, optional
         the filename for the results of the simulations and the logging file. Do not include the suffix, the suffix ".h5" will be
         added to output file and the suffix ".log" will be added to log file automatically. If this is set to None,
@@ -56,13 +57,9 @@ def perform_gs_energy_vs_dtau_run(tps_params, model_params, dtaus, dtau_index, N
         total time the algorithm was run for. Is only returned if output_filename == None.
     """
     # Make sure parameters are in the correct format
-    assert("g" in model_params)
-    assert("J" in model_params)
-
     if L is not None:
         tps_params["Lx"] = L
         tps_params["Ly"] = L
-
     assert("Lx" in tps_params)
     assert("Ly" in tps_params)
     assert(tebd_order == 1 or tebd_order == 2)
@@ -113,13 +110,13 @@ def perform_gs_energy_vs_dtau_run(tps_params, model_params, dtaus, dtau_index, N
         tps.initialize_spinup()
     elif initialize == "spinright":
         tps.initialize_spinright()
-    tps.reset_debug_dict()
+    tps.debug_logger.clear()
 
     # Initialize Hamiltonian
     if lattice == "square":
-        H_bonds = tfi.TFI(model_params["g"], model_params["J"]).compute_H_bonds_2D_Square(tps_params["Lx"], tps_params["Ly"])
+        H_bonds = model(**model_params).compute_H_bonds_2D_Square(tps_params["Lx"], tps_params["Ly"])
     elif lattice == "honeycomb":
-        H_bonds = tfi.TFI(model_params["g"], model_params["J"]).compute_H_bonds_2D_Honeycomb(tps_params["Lx"], tps_params["Ly"])
+        H_bonds = model(**model_params).compute_H_bonds_2D_Honeycomb(tps_params["Lx"], tps_params["Ly"])
 
     # Perform time evolution
     Es = []
@@ -136,7 +133,6 @@ def perform_gs_energy_vs_dtau_run(tps_params, model_params, dtaus, dtau_index, N
         for n in range(N_steps):
             if i < dtau_index:
                 tps_prev = tps.copy()
-            tps.reset_debug_errors_and_times()
             try:
                 start_TEBD = time.time()
                 if tebd_order == 1:
@@ -161,12 +157,13 @@ def perform_gs_energy_vs_dtau_run(tps_params, model_params, dtaus, dtau_index, N
             dtaus_final.append(dtau)
             append_to_log(f"dtau = {dtau}, n = {n}, E = {E}")
             append_to_log(f"Total time: {tebd_time}")
-            if debug_levels.check_debug_level(tps.debug_dict, debug_levels.DebugLevel.LOG_PER_SITE_ERROR_AND_WALLTIME):
-                append_to_log(f"Total time YB: {np.sum(tps.debug_dict['times_yb'])}")
-                append_to_log(f"Total time TEBD: {np.sum(tps.debug_dict['times_tebd'])}")
-                append_to_log(f"Error density YB: {np.sum(tps.debug_dict['errors_yb']) / N}")
-                append_to_log(f"Error density TEBD: {np.sum(tps.debug_dict['errors_tebd']) / N}")
-
+            if tps.debug_logger.log_algorithm_walltimes and  "algorithm_walltimes" in tps.debug_logger.log_dict:
+                if "local_tebd_update" in tps.debug_logger.log_dict["algorithm_walltimes"]:
+                    append_to_log(f"Total time TEBD: {tps.debug_logger.log_dict["algorithm_walltimes"]["local_tebd_update"][-1]}")
+                if "yb_move" in tps.debug_logger.log_dict["algorithm_walltimes"]:
+                    append_to_log(f"Total time YB: {tps.debug_logger.log_dict["algorithm_walltimes"]["yb_move"][-1]}")
+                if "variational_column_optimization" in tps.debug_logger.log_dict["algorithm_walltimes"]:
+                    append_to_log(f"Total time variational column optimization: {tps.debug_logger.log_dict["algorithm_walltimes"]["variational_column_optimization"][-1]}")
     end = time.time()
     if len(Es) > 0:
         append_to_log(f"finished simulation after {round(end - start, 4)} seconds with final energy {Es[-1]}.")
@@ -184,5 +181,4 @@ def perform_gs_energy_vs_dtau_run(tps_params, model_params, dtaus, dtau_index, N
                 hf["success"][...] = True
             else:
                 hf["error"] = error
-            if tps.debug_dict is not None:
-                tps.dump_debug_dict(hf)
+            tps.debug_logger.save_to_file_h5(hf)
