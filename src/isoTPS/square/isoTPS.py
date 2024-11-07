@@ -482,10 +482,15 @@ class isoTPS_Square(isoTPS.isoTPS):
             else:
                 Ts_after_YB = [utility.flip_T_square(self.Ts[self.get_index(x, y, 1)].copy()) for y in range(self.Ly)]
                 Ws_after_YB = [utility.flip_W(W.copy()) for W in self.Ws] + [None]
-            optimizer = column_optimization.variationalColumnOptimizer(Ts_before_YB, Ws_before_YB, Ts_after_YB, Ws_after_YB, ortho_center, debug_logger=self.debug_logger)
+            optimizer = column_optimization.variationalColumnOptimizer(Ts_before_YB, Ws_before_YB, Ts_after_YB, Ws_after_YB, ortho_center, self.variational_column_optimization_options["mode"], debug_logger=self.debug_logger)
             if self.perform_variational_column_optimization:
                 # Optimize column
-                optimizer.optimize_column(**self.variational_column_optimization_options)
+                if self.debug_logger.log_algorithm_walltimes:
+                    start = time.time()
+                optimizer.optimize_column(self.variational_column_optimization_options["N_sweeps"])
+                if self.debug_logger.log_algorithm_walltimes:
+                    end = time.time()
+                    self.time_counter_variational_column_optimization += end-start
                 if p == 0:
                     for i in range(2*self.Ly-1):
                         self.Ws[i] = utility.flip_W(optimizer.Ws[i+1])
@@ -575,10 +580,15 @@ class isoTPS_Square(isoTPS.isoTPS):
                 Ts_after_YB = [self.Ts[self.get_index(x+1, y, 0)].copy() for y in range(self.Ly)]
                 Ws_after_YB = [None] + [W.copy() for W in self.Ws]
                 ortho_center += 1
-            optimizer = column_optimization.variationalColumnOptimizer(Ts_before_YB, Ws_before_YB, Ts_after_YB, Ws_after_YB, ortho_center, debug_logger=self.debug_logger)
+            optimizer = column_optimization.variationalColumnOptimizer(Ts_before_YB, Ws_before_YB, Ts_after_YB, Ws_after_YB, ortho_center, self.variational_column_optimization_options["mode"], debug_logger=self.debug_logger)
             if self.perform_variational_column_optimization:
                 # Optimize column
-                optimizer.optimize_column(**self.variational_column_optimization_options)
+                if self.debug_logger.log_algorithm_walltimes:
+                    start = time.time()
+                optimizer.optimize_column(self.variational_column_optimization_options["N_sweeps"])
+                if self.debug_logger.log_algorithm_walltimes:
+                    end = time.time()
+                    self.time_counter_variational_column_optimization += end-start
                 if p == 0:
                     for i in range(2*self.Ly-1):
                         self.Ws[i] = optimizer.Ws[i]

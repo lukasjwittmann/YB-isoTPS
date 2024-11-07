@@ -708,7 +708,7 @@ def turn_dicts_to_lists(d):
                 else:
                     i -= 1
                     break
-            if i == -1 or len(d[key] != i+1):
+            if i == -1 or len(d[key]) != i+1:
                 # The dictionary is not in the expected format. Recursively go down if the element is a dictionary
                 turn_dicts_to_lists(d[key])
             else:

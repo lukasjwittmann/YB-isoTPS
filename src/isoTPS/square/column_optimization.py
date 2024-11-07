@@ -5,7 +5,7 @@ from .. import shifting_ortho_center
 
 class variationalColumnOptimizer:
 
-    def __init__(self, Ts_before_YB, Ws_before_YB, Ts_after_YB, Ws_after_YB, ortho_center, chi_max, mode="dont_move_oc", debug_logger=debug_logging.DebugLogger()):
+    def __init__(self, Ts_before_YB, Ws_before_YB, Ts_after_YB, Ws_after_YB, ortho_center, chi_max, mode="dont_move_oc", relative_improvement_stopping_criterion=1e-9, debug_logger=debug_logging.DebugLogger()):
         self.Ts_before_YB = Ts_before_YB
         self.Ws_before_YB = Ws_before_YB
         self.Ts = Ts_after_YB
@@ -13,6 +13,7 @@ class variationalColumnOptimizer:
         self.ortho_center = ortho_center
         self.chi_max = chi_max
         self.mode = mode
+        self.relative_improvement_stopping_criterion = relative_improvement_stopping_criterion
         self.debug_logger = debug_logger
         self.Ly = len(self.Ts_before_YB)
         assert(len(self.Ws_before_YB) == 2*self.Ly)
@@ -602,6 +603,54 @@ class variationalColumnOptimizer:
             self.optimize_T_W2(0)
             pass
 
+    def optimize_column_sweep_bottom_to_top_moving_oc(self):
+        """
+        Sweeps once from the bottom to the top, optimizing T and W tensors and updating the bottom environments along the way.
+        The bottom most tensors (position 0) are not updated. Assumes all thetas have been computed already and that the OC is at
+        the bottom-most position.
+        """
+        assert self.ortho_center == 0 or self.ortho_center == 1
+        self.move_ortho_center_to(2)
+        self.contract_bottom_environment(0)
+        for i in range(1, self.Ly-1):
+            self.optimize_T(i)
+            self.optimize_W1(i)
+            self.move_ortho_center_up()
+            self.optimize_W2(i)
+            self.move_ortho_center_up()
+            self.contract_bottom_environment(i)
+        if self.Ws[2*(self.Ly-1)+1] is None:
+            self.optimize_T_W1(self.Ly-1)
+        else:
+            self.optimize_T(self.Ly-1)
+            self.optimize_W1(self.Ly-1)
+            self.move_ortho_center_up()
+            self.optimize_W2(self.Ly-1)
+
+    def optimize_column_sweep_top_to_bottom_moving_oc(self):
+        """
+        Sweeps once from the top to the bottom, optimizing T and W tensors and updating the top environments along the way.
+        The upper most tensors (position Ly-1) are not updated. Assumes all thetas have been computed already and that the OC is at
+        the upper-most position.
+        """
+        assert self.ortho_center == 2*(self.Ly-1) or self.ortho_center == 2*(self.Ly-1) + 1
+        self.move_ortho_center_to(2*self.Ly-3)
+        self.contract_top_environment(self.Ly-1)
+        for i in range(self.Ly-2, 0, -1):
+            self.optimize_T(i)
+            self.optimize_W2(i)
+            self.move_ortho_center_down()
+            self.optimize_W1(i)
+            self.move_ortho_center_down()
+            self.contract_top_environment(i)
+        if self.Ws[0] is None:
+            self.optimize_T_W2(0)
+        else:
+            self.optimize_T(0)
+            self.optimize_W2(0)
+            self.move_ortho_center_down()
+            self.optimize_W2(0)
+
     def optimize_column_without_moving_oc(self, N_sweeps):
         """
         Variationally optimizes the column, sweeping N_sweeps times up and down.
@@ -623,12 +672,17 @@ class variationalColumnOptimizer:
                 self.debug_logger.append_to_log_list("column_errors_yb_before_variational_optimization", self.eps)
             self.contract_bottom_environment(0)
             for n in range(N_sweeps):
+                # Optimize tensors
                 self.optimize_column_sweep_bottom_to_top()
                 self.contract_top_environment(self.Ly-1)
                 self.optimize_column_sweep_top_to_bottom()
-                if self.debug_logger.variational_column_optimization_log_info_per_iteration:
+                # Log error
+                if self.debug_logger.variational_column_optimization_log_info_per_iteration or self.relative_improvement_stopping_criterion is not None:
                     self.contract_top_environment(0)
                     errors.append(self.eps)
+                # Check stopping criterion
+                if self.relative_improvement_stopping_criterion is not None and len(errors) > 1 and (errors[-1] <= 1e-14 or np.abs((errors[-1]-errors[-2])/errors[-1]) < self.relative_improvement_stopping_criterion):
+                    break
             if self.debug_logger.log_column_error_yb_after_variational_optimization:
                 if self.debug_logger.variational_column_optimization_log_info_per_iteration:
                     self.debug_logger.append_to_log_list("column_errors_yb_after_variational_optimization", errors[-1])
@@ -647,12 +701,17 @@ class variationalColumnOptimizer:
                 self.debug_logger.append_to_log_list("column_errors_yb_before_variational_optimization", self.eps)
             self.contract_top_environment(self.Ly-1)
             for n in range(N_sweeps):
+                # Optimize tensors
                 self.optimize_column_sweep_top_to_bottom()
                 self.contract_bottom_environment(0)
                 self.optimize_column_sweep_bottom_to_top()
-                if self.debug_logger.variational_column_optimization_log_info_per_iteration:
+                # Log error
+                if self.debug_logger.variational_column_optimization_log_info_per_iteration or self.relative_improvement_stopping_criterion is not None:
                     self.contract_bottom_environment(self.Ly-1)
                     errors.append(self.eps)
+                # Check stopping criterion
+                if self.relative_improvement_stopping_criterion is not None and len(errors) > 1 and (errors[-1] <= 1e-14 or np.abs((errors[-1]-errors[-2])/errors[-1]) < self.relative_improvement_stopping_criterion):
+                    break
             if self.debug_logger.log_column_error_yb_after_variational_optimization:
                 if self.debug_logger.variational_column_optimization_log_info_per_iteration:
                     self.debug_logger.append_to_log_list("column_errors_yb_after_variational_optimization", errors[-1])
@@ -663,6 +722,8 @@ class variationalColumnOptimizer:
                     self.debug_logger.append_to_log_list("column_errors_yb_improvement_through_variational_optimization", self.eps/initial_error)
         else:
             raise ValueError(f"VariationalColumnOptimizer.optimize_column() must only be called when the orthogonality center is either at the top or at the bottom.")
+        if self.debug_logger.variational_column_optimization_log_info:
+            self.debug_logger.append_to_log_list(("variational_column_optimization_info", "N_sweeps"), n+1)
         if self.debug_logger.variational_column_optimization_log_info_per_iteration:
             self.debug_logger.append_to_log_list(("variational_column_optimization_info", "column_errors"), errors)
 
@@ -688,29 +749,21 @@ class variationalColumnOptimizer:
                 self.debug_logger.append_to_log_list("column_errors_yb_before_variational_optimization", self.eps)
             self.contract_bottom_environment(0)            
             for n in range(N_sweeps):
-                #print(f"Sweep {n} ...")
                 # Optimize T tensors
                 self.optimize_Ts_bottom_to_top()
                 self.contract_top_environment(self.Ly-1)
                 self.optimize_Ts_top_to_bottom()
                 self.contract_bottom_environment(0)
+                # Optimize W tensors
                 self.optimize_Ws_bottom_to_top()
                 self.optimize_Ws_top_to_bottom()
-                
-
-                # DEBUG: Only the top to bottom part
-                #self.move_ortho_center_to(2*self.Ly-1)
-                #self.compute_bottom_environments()
-                #self.optimize_Ws_top_to_bottom()
-
-                # DEBUG: Only the bottom to top part
-                #self.optimize_Ws_bottom_to_top()
-                #self.move_ortho_center_to(0)
-                #self.compute_top_environments()
                 # Log error
-                if self.debug_logger.variational_column_optimization_log_info_per_iteration:
+                if self.debug_logger.variational_column_optimization_log_info_per_iteration or self.relative_improvement_stopping_criterion is not None:
                     self.contract_top_environment(0)
                     errors.append(self.eps)
+                # Check stopping criterion
+                if self.relative_improvement_stopping_criterion is not None and len(errors) > 1 and (errors[-1] <= 1e-14 or np.abs((errors[-1]-errors[-2])/errors[-1]) < self.relative_improvement_stopping_criterion):
+                    break
             if self.debug_logger.log_column_error_yb_after_variational_optimization:
                 if self.debug_logger.variational_column_optimization_log_info_per_iteration:
                     self.debug_logger.append_to_log_list("column_errors_yb_after_variational_optimization", errors[-1])
@@ -730,18 +783,21 @@ class variationalColumnOptimizer:
                 self.debug_logger.append_to_log_list("column_errors_yb_before_variational_optimization", self.eps)
             self.contract_top_environment(self.Ly-1)
             for n in range(N_sweeps):
-                #print(f"Sweep {n} ...")
                 # Optimize T tensors
                 self.optimize_Ts_top_to_bottom()
                 self.contract_bottom_environment(0)
                 self.optimize_Ts_bottom_to_top()
+                self.contract_top_environment(self.Ly-1)
                 # Optimize W tensors
                 self.optimize_Ws_top_to_bottom()
                 self.optimize_Ws_bottom_to_top()
                 # Log error
-                if self.debug_logger.variational_column_optimization_log_info_per_iteration:
+                if self.debug_logger.variational_column_optimization_log_info_per_iteration or self.relative_improvement_stopping_criterion is not None:
                     self.contract_top_environment(self.Ly-1)
                     errors.append(self.eps)
+                # Check stopping criterion
+                if self.relative_improvement_stopping_criterion is not None and len(errors) > 1 and (errors[-1] <= 1e-14 or np.abs((errors[-1]-errors[-2])/errors[-1]) < self.relative_improvement_stopping_criterion):
+                    break
             if self.debug_logger.log_column_error_yb_after_variational_optimization:
                 if self.debug_logger.variational_column_optimization_log_info_per_iteration:
                     self.debug_logger.append_to_log_list("column_errors_yb_after_variational_optimization", errors[-1])
@@ -752,6 +808,85 @@ class variationalColumnOptimizer:
                     self.debug_logger.append_to_log_list("column_errors_yb_improvement_through_variational_optimization", self.eps/initial_error)
         else:
             raise ValueError(f"VariationalColumnOptimizer.optimize_column() must only be called when the orthogonality center is either at the top or at the bottom.")
+        if self.debug_logger.variational_column_optimization_log_info:
+            self.debug_logger.append_to_log_list(("variational_column_optimization_info", "N_sweeps"), n+1)
+        if self.debug_logger.variational_column_optimization_log_info_per_iteration:
+            self.debug_logger.append_to_log_list(("variational_column_optimization_info", "column_errors"), errors)
+
+    def optimize_column_move_oc_T_and_Ws_alternatingly(self, N_sweeps):
+        """
+        Variationally optimizes the column, sweeping N_sweeps times up and down.
+        """
+        # Initial contractions
+        if self.thetas[0] is None:
+            self.compute_thetas()
+        initial_error = None
+        errors = []
+        # Depending on the position of the orthogonality center, sweep up-down or down-up
+        N_Ws = len(self.Ws)
+        if self.ortho_center == 0 or self.ortho_center == 1 and self.Ws[0] is None:
+            #print("Start at the bottom, sweep up and down again")
+            # Start at the bottom, sweep up and down again
+            self.compute_top_environments()
+            initial_error = self.eps
+            if self.debug_logger.variational_column_optimization_log_info_per_iteration:
+                errors.append(self.eps)
+            if self.debug_logger.log_column_error_yb_before_variational_optimization:
+                self.debug_logger.append_to_log_list("column_errors_yb_before_variational_optimization", self.eps)
+            self.contract_bottom_environment(0)            
+            for n in range(N_sweeps):
+                # Optimize tensors
+                self.optimize_column_sweep_bottom_to_top_moving_oc()
+                self.optimize_column_sweep_top_to_bottom_moving_oc()
+                # Log error
+                if self.debug_logger.variational_column_optimization_log_info_per_iteration or self.relative_improvement_stopping_criterion is not None:
+                    self.contract_top_environment(0)
+                    errors.append(self.eps)
+                # Check stopping criterion
+                if self.relative_improvement_stopping_criterion is not None and len(errors) > 1 and (errors[-1] <= 1e-14 or np.abs((errors[-1]-errors[-2])/errors[-1]) < self.relative_improvement_stopping_criterion):
+                    break
+            if self.debug_logger.log_column_error_yb_after_variational_optimization:
+                if self.debug_logger.variational_column_optimization_log_info_per_iteration:
+                    self.debug_logger.append_to_log_list("column_errors_yb_after_variational_optimization", errors[-1])
+                    self.debug_logger.append_to_log_list("column_errors_yb_improvement_through_variational_optimization", 1.0 if initial_error == 0.0 else errors[-1]/initial_error)
+                else:
+                    self.contract_top_environment(0)
+                    self.debug_logger.append_to_log_list("column_errors_yb_after_variational_optimization", self.eps)
+                    self.debug_logger.append_to_log_list("column_errors_yb_improvement_through_variational_optimization", 1.0 if initial_error == 0.0 else self.eps/initial_error)
+        elif self.ortho_center == N_Ws-1 or self.ortho_center == N_Ws-2 and self.Ws[N_Ws-1] is None:
+            #print("Start at the top, sweep down and up again")
+            # Start at the top, sweep down and up again
+            self.compute_bottom_environments()
+            initial_error = self.eps
+            if self.debug_logger.variational_column_optimization_log_info_per_iteration:
+                errors.append(self.eps)
+            if self.debug_logger.log_column_error_yb_before_variational_optimization:
+                self.debug_logger.append_to_log_list("column_errors_yb_before_variational_optimization", self.eps)
+            self.contract_top_environment(self.Ly-1)
+            for n in range(N_sweeps):
+                # Optimize tensors
+                self.optimize_column_sweep_top_to_bottom_moving_oc()
+                self.optimize_column_sweep_bottom_to_top_moving_oc()
+                self.optimize_column_sweep_bottom_to_top()
+                # Log error
+                if self.debug_logger.variational_column_optimization_log_info_per_iteration or self.relative_improvement_stopping_criterion is not None:
+                    self.contract_top_environment(self.Ly-1)
+                    errors.append(self.eps)
+                # Check stopping criterion
+                if self.relative_improvement_stopping_criterion is not None and len(errors) > 1 and (errors[-1] <= 1e-14 or np.abs((errors[-1]-errors[-2])/errors[-1]) < self.relative_improvement_stopping_criterion):
+                    break
+            if self.debug_logger.log_column_error_yb_after_variational_optimization:
+                if self.debug_logger.variational_column_optimization_log_info_per_iteration:
+                    self.debug_logger.append_to_log_list("column_errors_yb_after_variational_optimization", errors[-1])
+                    self.debug_logger.append_to_log_list("column_errors_yb_improvement_through_variational_optimization", errors[-1]/initial_error)
+                else:
+                    self.contract_bottom_environment(self.Ly-1)
+                    self.debug_logger.append_to_log_list("column_errors_yb_after_variational_optimization", self.eps)
+                    self.debug_logger.append_to_log_list("column_errors_yb_improvement_through_variational_optimization", self.eps/initial_error)
+        else:
+            raise ValueError(f"VariationalColumnOptimizer.optimize_column() must only be called when the orthogonality center is either at the top or at the bottom.")
+        if self.debug_logger.variational_column_optimization_log_info:
+            self.debug_logger.append_to_log_list(("variational_column_optimization_info", "N_sweeps"), n+1)
         if self.debug_logger.variational_column_optimization_log_info_per_iteration:
             self.debug_logger.append_to_log_list(("variational_column_optimization_info", "column_errors"), errors)
 
@@ -761,6 +896,6 @@ class variationalColumnOptimizer:
         elif self.mode == "move_oc_first_T_then_W":
             self.optimize_column_move_oc_first_T_then_W(N_sweeps)
         elif self.mode == "move_oc_alternate_T_W":
-            pass
+            self.optimize_column_move_oc_T_and_Ws_alternatingly(N_sweeps)
         else:
             raise ValueError(f"\"{self.mode}\" is not a valid mode for calling VariationalColumnOptimizer.optimize_column()!")
