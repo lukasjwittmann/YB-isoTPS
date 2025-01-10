@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.linalg import svd
 import time 
-from sklearn.utils.extmath import randomized_svd
+#from sklearn.utils.extmath import randomized_svd
 from .. import debug_logging
 
 def get_psi(A,S,B):

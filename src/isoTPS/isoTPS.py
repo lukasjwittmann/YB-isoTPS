@@ -1,8 +1,8 @@
 import numpy as np
 from ..utility import debug_logging
 from . import shifting_ortho_center
-import h5py
-import hdfdict
+#import h5py
+#import hdfdict
 
 class isoTPS:
     """

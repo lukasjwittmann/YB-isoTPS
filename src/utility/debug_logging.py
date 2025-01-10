@@ -1,4 +1,4 @@
-import hdfdict
+#import hdfdict
 import copy
 from . import utility
 

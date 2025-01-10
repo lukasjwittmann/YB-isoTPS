@@ -1,7 +1,7 @@
 import numpy as np
 import scipy
 import scipy.linalg
-import hdfdict
+#import hdfdict
 
 """
 This file implements several utility functions that are used throughout the code base
