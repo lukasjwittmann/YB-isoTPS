@@ -721,3 +721,59 @@ def turn_dicts_to_lists(d):
                 for j in range(i+1):
                     if type(d[key][j]) is dict:
                         turn_dicts_to_lists(d[key][j])
+
+
+def get_flipped_As(As):
+    """For a list of site tensors As, reverse the order and flip every tensor A vertically.
+
+    2       4      1       3
+     \  0  /        \  0  /
+      \ | /          \ | / 
+       (A)     ->     (A)
+      /   \          /   \
+     /     \        /     \
+    1       3      2       4
+
+    p ld lu rd ru -> p lu ld ru rd
+    """
+    if As is not None:
+        return [np.transpose(A, (0, 2, 1, 4, 3)) for A in As[::-1]]
+    else:
+        return None
+
+def get_flipped_hs(hs):
+    """For a list of mpo tensors hs, reverse the order and flip every tensor h vertically.
+
+         1           0
+     2  /        2  /
+     | /         | /
+    (h)     ->  (h)
+     | \         | \
+     3  \        3  \
+         0           1
+
+    rd ru p p* -> ru rd p p*
+    """
+    if hs is not None:
+        return [np.transpose(h, (1, 0, 2, 3)) for h in hs[::-1]]
+    else:
+        return None
+
+def get_flipped_Cs(Cs):
+    """For a list of orthogonality column or boundary mps tensors Cs, reverse the order and flip 
+    every tensor C vertically.
+
+         3                0
+         |                |
+         |                |
+    1---(C)---2  ->  1---(C)---2
+         |                |
+         |                |
+         0                3
+
+    d l r u -> u l r d
+    """
+    if Cs is not None:
+        return [np.transpose(C, (3, 1, 2, 0)) for C in Cs[::-1]]
+    else:
+        return None
