@@ -266,3 +266,39 @@ def expectation_value_twosite(T1, T2, Wm1, W, Wp1, op):
     norm = np.transpose(contr, (0, 2, 1, 3)) # p1, p1*, p2, p2* -> p1, p2, p1*, p2*
     norm = np.reshape(norm, (norm.shape[0] * norm.shape[1], norm.shape[2] * norm.shape[3])) # p1, p2, p1*, p2* -> (p1, p2), (p1*, p2*)
     return np.tensordot(contr, op, ([0, 1, 2, 3], [2, 0, 3, 1])) / np.trace(norm) # [p1] [p1*] [p2] [p2*]; [i] [j] [i*] [j*]
+
+
+def get_bond_column_expectation_value(ALs, ARs, Cs, hs):
+    """For orthogonality column tensors Cs and left/right orthonormal site tensors ALs/ARs, compute
+    the expectation value of the mpo hs."""
+    assert len(ALs) == len(ARs) == (len(Cs)+1)//2 == len(hs)//2
+    assert np.shape(ALs[0])[1] == np.shape(ALs[0])[3] \
+            == np.shape(hs[0])[0] == np.shape(Cs[0])[0] == 1
+    AL = ALs[0][:, 0, :, 0, :]
+    h = hs[0][0, :, :, :]
+    C = Cs[0][0, :, :, :]
+    DP = np.einsum("abc,dea,ebf,cgh,fij->gdihj", \
+                    AL, h, np.conj(AL), C, np.conj(C), \
+                    optimize=True)
+    assert np.shape(ARs[-1])[2] == np.shape(ARs[-1])[4] \
+            == np.shape(hs[-1])[1] == np.shape(Cs[-1])[3] == 1
+    AR = ARs[-1][:, :, 0, :, 0] 
+    h = hs[-1][:, 0, :, :]
+    UP = np.einsum("abc,dea,ebf->cdf", \
+                    AR, h, np.conj(AR), \
+                    optimize=True)
+    for n in range(len(ALs)-1):
+        DP = np.einsum("abcde,fghai,bjkf,kghcl,dmin,eolp->mjonp", \
+                        DP, ARs[n], hs[(2*n)+1], np.conj(ARs[n]), \
+                        Cs[(2*n)+1], np.conj(Cs[(2*n)+1]), \
+                        optimize=True)
+        DP = np.einsum("abcde,fghai,bjkf,kghcl,dimn,elop->mjonp", \
+                        DP, ALs[n+1], hs[2*(n+1)], np.conj(ALs[n+1]), \
+                        Cs[2*(n+1)], np.conj(Cs[2*(n+1)]), \
+                        optimize=True)
+    e = np.einsum("abcde,abc->de", \
+                    DP, UP, \
+                    optimize=True)
+    assert np.shape(e) == (1, 1)
+    e = e[0, 0]
+    return np.real_if_close(e)
