@@ -872,7 +872,7 @@ class isoTPS_Square(isoTPS.isoTPS):
                     result[i].append(expectation_values.expectation_value_onesite(T, W, Wp1, op))
                 left_environment = not left_environment
                 self.move_ortho_center_up()
-        return result
+        return np.real_if_close(result)
 
     def compute_expectation_values_twosite(self, ops):
         """
@@ -895,7 +895,7 @@ class isoTPS_Square(isoTPS.isoTPS):
                 T1, T2, Wm1, W, Wp1 = self.get_environment_twosite()
                 result.append(expectation_values.expectation_value_twosite(T1, T2, Wm1, W, Wp1, ops[xi * (2 * self.Ly - 1) + yi]))
                 self.move_ortho_center_up()
-        return result
+        return np.real_if_close(result)
 
     def perform_TEBD_at_ortho_center(self, U_bonds):
         """
@@ -1177,3 +1177,116 @@ class isoTPS_Square(isoTPS.isoTPS):
         T_index = self.get_index(x, self.Ly - 1, 1)
         psi = np.tensordot(self.Ts[T_index][state[T_index], 0, 0, :, 0], psi, ([0], [0])) # [ld]; [r_N]
         return psi.item()
+    
+
+    @classmethod
+    def from_qubit_product_state(cls, Lx, Ly, D_max, chi_max, spin_orientation):
+        """For lattice lengths Lx, Ly and maximal bond/column dimensions D_max/chi_max, initialize 
+        a product state with all spin-1/2s in spin_orientation."""
+        peps_parameters = {
+            "Lx": Lx,
+            "Ly": Ly,
+            "D_max": D_max,
+            "chi_max": chi_max,
+            "d": 2,
+            "yb_options" : { 
+                "mode" : "svd",
+                "disentangle": True,
+                "disentangle_options": {
+                    "mode": "renyi_approx",
+                    "renyi_alpha": 0.5,
+                    "method": "trm",
+                    "N_iters": 100,
+                }
+            },
+        }
+        peps = cls(**peps_parameters)
+        if spin_orientation == "up":
+            state = np.array([1., 0.])
+        elif spin_orientation == "down":
+            state = np.array([0., 1.])
+        elif spin_orientation == "right":
+            state = np.array([1., 1.]) / np.sqrt(2)
+        elif spin_orientation == "left":
+            state = np.array([1., -1.]) / np.sqrt(2)
+        else:
+            raise ValueError(f"choose spin orientation \"up\", \"down\", \"right\" or \"left\".")
+        A = np.zeros(shape=(2, 1, 1, 1, 1))
+        A[:, 0, 0, 0, 0] = state
+        peps.Ts = [A] * (2 * peps.Lx * peps.Ly)
+        C = np.ones(shape=(1, 1, 1, 1))
+        peps.Ws = [C] * (2 * peps.Ly - 1)
+        (peps.ortho_surface, peps.ortho_center) = (2*Lx-1, 2*Ly-2)
+        for bx in reversed(range(2*Lx)):
+            if bx%2 == 1:
+                peps.move_ortho_surface_left(force=True, move_upwards=False)
+            elif bx%2 == 0:
+                peps.move_ortho_surface_left(force=True, move_upwards=True)
+        assert (peps.ortho_surface, peps.ortho_center) == (-1, 2*Ly-2)
+        return peps
+    
+    def get_ARs(self, nx):
+        """Return the Ly right orthonormal tensors Ts of bond column nx in {0, ..., 2Lx}. Bond 
+        column 0 is left of the whole lattice, corresponding to ortho_surface=-1."""
+        bx = nx - 1
+        if self.ortho_surface > bx:
+            raise ValueError(f"Orthogonality column at {self.ortho_surface+1} is right of {nx}.")
+        if bx == 2 * self.Lx - 1:
+            return None
+        ARs = []
+        x = (bx + 1) // 2
+        p = (bx + 1) % 2
+        for y in range(self.Ly):
+            T = self.Ts[self.get_index(x, y, p)].copy()
+            ARs.append(np.transpose(T, (0, 2, 1, 3, 4)))  # p ru rd ld lu -> p rd ru ld lu
+        return ARs
+    
+    def get_ALs(self, nx):
+        """Return the Ly left orthonormal tensors Ts of bond column nx in {0, ..., 2Lx}. Bond 
+        column 0 is left of the whole lattice, corresponding to ortho_surface=-1."""
+        bx = nx - 1
+        if self.ortho_surface < bx:
+            raise ValueError(f"Orthogonality column at {self.ortho_surface+1} is left of {nx}.")
+        if bx == -1:
+            return None
+        ALs = []
+        x = bx // 2
+        p = bx % 2
+        for y in range(self.Ly):
+            T = self.Ts[self.get_index(x, y, p)].copy()
+            ALs.append(np.transpose(T, (0, 3, 4, 2, 1)))  # p ru rd ld lu -> p ld lu rd ru
+        return ALs
+    
+    def get_Cs(self, nx):
+        """Return the 2*Ly-1 tensors Ws of the orthogonality column nx in {0, ..., 2Lx}. 
+        Orthogonality column 0 is left of the whole lattice, corresponding to ortho_surface=-1."""
+        bx = nx - 1
+        if self.ortho_surface != bx:
+            raise ValueError(f"Orthogonality column is at {self.ortho_surface+1} and not at {nx}.")
+        Cs = []
+        for y in range(2*self.Ly-1):
+            Cs.append(np.transpose(self.Ws[y].copy(), (3, 0, 2, 1)))  # l u r d -> d l r u
+        return Cs
+
+    def get_bond_column_expectation_values(self, H):
+        """Compute the expectation values of a list of mpos H by moving through the bond columns 
+        from left to right."""
+        es = []
+        self.move_to(0, 0)
+        for n in range(1, 2*self.Lx):
+            if n%2 == 1:
+                e = expectation_values.get_bond_column_expectation_value(self.get_ALs(n), \
+                                                                         self.get_ARs(n), \
+                                                                         self.get_Cs(n), \
+                                                                         H[n-1])
+                es.append(e)
+                if n != 2*self.Lx-1:
+                    self.move_ortho_surface_right(move_upwards=True)
+            elif n%2 == 0:
+                e = expectation_values.get_bond_column_expectation_value(utility.get_flipped_As(self.get_ALs(n)), \
+                                                            utility.get_flipped_As(self.get_ARs(n)), \
+                                                            utility.get_flipped_Cs(self.get_Cs(n)), \
+                                                            utility.get_flipped_hs(H[n-1]))
+                es.append(e)
+                self.move_ortho_surface_right(move_upwards=False)
+        return np.real_if_close(es)
