@@ -1272,17 +1272,26 @@ class isoTPS_Square(isoTPS.isoTPS):
             Cs.append(np.transpose(self.Ws[y].copy(), (3, 0, 2, 1)))  # l u r d -> d l r u
         return Cs
 
-    def get_bond_column_expectation_values(self, H):
+    def get_bond_column_expectation_values(self, h_mpos):
         """Compute the expectation values of a list of mpos H by moving through the bond columns 
         from left to right."""
+        bx = self.ortho_surface
+        if bx == -1:
+            self.move_ortho_surface_right(move_upwards=False)
+        else:
+            for b in range(bx, 0, -1):
+                if b%2 == 1:
+                    self.move_ortho_surface_left(move_upwards=False)
+                elif b%2 == 0:
+                    self.move_ortho_surface_left(move_upwards=True)
+        assert (self.ortho_surface, self.ortho_center) == (0, 0)
         es = []
-        self.move_to(0, 0)
         for n in range(1, 2*self.Lx):
             if n%2 == 1:
                 e = expectation_values.get_bond_column_expectation_value(self.get_ALs(n), \
                                                                          self.get_ARs(n), \
                                                                          self.get_Cs(n), \
-                                                                         H[n-1])
+                                                                         h_mpos[n-1])
                 es.append(e)
                 if n != 2*self.Lx-1:
                     self.move_ortho_surface_right(move_upwards=True)
@@ -1290,7 +1299,7 @@ class isoTPS_Square(isoTPS.isoTPS):
                 e = expectation_values.get_bond_column_expectation_value(utility.get_flipped_As(self.get_ALs(n)), \
                                                             utility.get_flipped_As(self.get_ARs(n)), \
                                                             utility.get_flipped_Cs(self.get_Cs(n)), \
-                                                            utility.get_flipped_hs(H[n-1]))
+                                                            utility.get_flipped_hs(h_mpos[n-1]))
                 es.append(e)
                 self.move_ortho_surface_right(move_upwards=False)
         return np.real_if_close(es)
