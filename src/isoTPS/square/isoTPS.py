@@ -1199,6 +1199,10 @@ class isoTPS_Square(isoTPS.isoTPS):
                     "N_iters": 100,
                 }
             },
+            "tebd_options": {
+                "mode" : "iterate_polar",
+                "N_iters": 100,
+            }
         }
         peps = cls(**peps_parameters)
         if spin_orientation == "up":
