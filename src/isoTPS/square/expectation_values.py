@@ -1,4 +1,5 @@
 import numpy as np
+import opt_einsum as oe
 
 """
 This file implements the computation of norms and expectation values for one-site and two-site environments for the square isoTPS.
@@ -277,28 +278,23 @@ def get_bond_column_expectation_value(ALs, ARs, Cs, hs):
     AL = ALs[0][:, 0, :, 0, :]
     h = hs[0][0, :, :, :]
     C = Cs[0][0, :, :, :]
-    DP = np.einsum("abc,dea,ebf,cgh,fij->gdihj", \
-                    AL, h, np.conj(AL), C, np.conj(C), \
-                    optimize=True)
+    DP = oe.contract("abc,dea,ebf,cgh,fij->gdihj", \
+                    AL, h, np.conj(AL), C, np.conj(C))
     assert np.shape(ARs[-1])[2] == np.shape(ARs[-1])[4] \
             == np.shape(hs[-1])[1] == np.shape(Cs[-1])[3] == 1
     AR = ARs[-1][:, :, 0, :, 0] 
     h = hs[-1][:, 0, :, :]
-    UP = np.einsum("abc,dea,ebf->cdf", \
-                    AR, h, np.conj(AR), \
-                    optimize=True)
+    UP = oe.contract("abc,dea,ebf->cdf", \
+                    AR, h, np.conj(AR))
     for n in range(len(ALs)-1):
-        DP = np.einsum("abcde,fghai,bjkf,kghcl,dmin,eolp->mjonp", \
+        DP = oe.contract("abcde,fghai,bjkf,kghcl,dmin,eolp->mjonp", \
                         DP, ARs[n], hs[(2*n)+1], np.conj(ARs[n]), \
-                        Cs[(2*n)+1], np.conj(Cs[(2*n)+1]), \
-                        optimize=True)
-        DP = np.einsum("abcde,fghai,bjkf,kghcl,dimn,elop->mjonp", \
+                        Cs[(2*n)+1], np.conj(Cs[(2*n)+1]))
+        DP = oe.contract("abcde,fghai,bjkf,kghcl,dimn,elop->mjonp", \
                         DP, ALs[n+1], hs[2*(n+1)], np.conj(ALs[n+1]), \
-                        Cs[2*(n+1)], np.conj(Cs[2*(n+1)]), \
-                        optimize=True)
-    e = np.einsum("abcde,abc->de", \
-                    DP, UP, \
-                    optimize=True)
+                        Cs[2*(n+1)], np.conj(Cs[2*(n+1)]))
+    e = oe.contract("abcde,abc->de", \
+                    DP, UP)
     assert np.shape(e) == (1, 1)
     e = e[0, 0]
     return np.real_if_close(e)
