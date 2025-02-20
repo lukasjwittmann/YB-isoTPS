@@ -1271,12 +1271,14 @@ class isoTPS_Square(isoTPS.isoTPS):
         for y in range(2*self.Ly-1):
             Cs.append(np.transpose(self.Ws[y].copy(), (3, 0, 2, 1)))  # l u r d -> d l r u
         return Cs
-
-    def get_bond_column_expectation_values(self, h_mpos):
-        """Compute the expectation values of a list of mpos H by moving through the bond columns 
-        from left to right."""
+    
+    def move_to_00(self):
+        """Move (ortho_surface, ortho_center) to (0, 0) by performing yang-baxter moves up/down on
+        even/odd orthogonality columns."""
         bx = self.ortho_surface
-        if bx == -1:
+        if bx == 0:
+            self.move_ortho_center_to(0)
+        elif bx == -1:
             self.move_ortho_surface_right(move_upwards=False)
         else:
             for b in range(bx, 0, -1):
@@ -1285,21 +1287,58 @@ class isoTPS_Square(isoTPS.isoTPS):
                 elif b%2 == 0:
                     self.move_ortho_surface_left(move_upwards=True)
         assert (self.ortho_surface, self.ortho_center) == (0, 0)
+        return
+
+    def get_column_expectation_values(self, h_mpos):
+        """Compute the expectation values of a list of mpos by moving through the columns from left 
+        to right with yang-baxter moves only."""
+        self.move_to_00()
         es = []
         for n in range(1, 2*self.Lx):
             if n%2 == 1:
-                e = expectation_values.get_bond_column_expectation_value(self.get_ALs(n), \
-                                                                         self.get_ARs(n), \
-                                                                         self.get_Cs(n), \
-                                                                         h_mpos[n-1])
+                e = expectation_values.get_column_expectation_value(self.get_ALs(n), \
+                                                                    self.get_ARs(n), \
+                                                                    self.get_Cs(n), \
+                                                                    h_mpos[n-1])
                 es.append(e)
                 if n != 2*self.Lx-1:
                     self.move_ortho_surface_right(move_upwards=True)
             elif n%2 == 0:
-                e = expectation_values.get_bond_column_expectation_value(utility.get_flipped_As(self.get_ALs(n)), \
-                                                            utility.get_flipped_As(self.get_ARs(n)), \
-                                                            utility.get_flipped_Cs(self.get_Cs(n)), \
-                                                            utility.get_flipped_hs(h_mpos[n-1]))
+                e = expectation_values.get_column_expectation_value(utility.get_flipped_As(self.get_ALs(n)), \
+                                                                    utility.get_flipped_As(self.get_ARs(n)), \
+                                                                    utility.get_flipped_Cs(self.get_Cs(n)), \
+                                                                    utility.get_flipped_hs(h_mpos[n-1]))
                 es.append(e)
+                self.move_ortho_surface_right(move_upwards=False)
+        return np.real_if_close(es)
+    
+    def get_bond_expectation_values(self, h_bonds):
+        """Compute the expectation values of a list of two-site operators by moving through the 
+        columns from left to right with yang-baxter moves only (move up and down the orthogonality
+        column only on copy instances)."""
+        self.move_to_00()
+        es = []
+        for bx in range(2*self.Lx-1):
+            iso_peps = self.copy()
+            if bx%2 == 0:
+                for by in range(2*self.Ly-1):
+                    assert(iso_peps.ortho_surface, iso_peps.ortho_center) == (bx, by)
+                    h_bond = h_bonds[(2 * self.Ly - 1) * bx + by]
+                    e = expectation_values.expectation_value_twosite(*iso_peps.get_environment_twosite(), \
+                                                                     h_bond)
+                    es.append(e)
+                    if by != 2*self.Ly-2:
+                        iso_peps.move_ortho_center_up()
+                if bx != 2*self.Lx-2:
+                    self.move_ortho_surface_right(move_upwards=True)
+            elif bx%2 == 1:
+                for by in reversed(range(2*self.Ly-1)):
+                    assert(iso_peps.ortho_surface, iso_peps.ortho_center) == (bx, by)
+                    h_bond = h_bonds[(2 * self.Ly - 1) * bx + by]
+                    e = expectation_values.expectation_value_twosite(*iso_peps.get_environment_twosite(), \
+                                                                     h_bond)
+                    es.append(e)
+                    if by != 0:
+                        iso_peps.move_ortho_center_down()                    
                 self.move_ortho_surface_right(move_upwards=False)
         return np.real_if_close(es)

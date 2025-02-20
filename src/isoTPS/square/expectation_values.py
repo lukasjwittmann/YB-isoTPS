@@ -269,7 +269,7 @@ def expectation_value_twosite(T1, T2, Wm1, W, Wp1, op):
     return np.tensordot(contr, op, ([0, 1, 2, 3], [2, 0, 3, 1])) / np.trace(norm) # [p1] [p1*] [p2] [p2*]; [i] [j] [i*] [j*]
 
 
-def get_bond_column_expectation_value(ALs, ARs, Cs, hs):
+def get_column_expectation_value(ALs, ARs, Cs, hs):
     """For orthogonality column tensors Cs and left/right orthonormal site tensors ALs/ARs, compute
     the expectation value of the mpo hs."""
     assert len(ALs) == len(ARs) == (len(Cs)+1)//2 == len(hs)//2
