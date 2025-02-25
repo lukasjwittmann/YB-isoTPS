@@ -1272,27 +1272,37 @@ class isoTPS_Square(isoTPS.isoTPS):
             Cs.append(np.transpose(self.Ws[y].copy(), (3, 0, 2, 1)))  # l u r d -> d l r u
         return Cs
     
-    def move_to_00(self):
-        """Move (ortho_surface, ortho_center) to (0, 0) by performing yang-baxter moves up/down on
-        even/odd orthogonality columns."""
+    def move_orthogonality_column_to(self, nx_center):
+        """Move the orthogonality column to nx_center in {0, ..., 2Lx}. Orthogonality column 0 is 
+        left of the whole lattice, corresponding to ortho_surface=-1. Perform yang-baxter moves 
+        up/down on even/odd orthogonality columns and end up with orthogonality center down/up for
+        nx_center even/odd."""
+        bx_center = nx_center - 1
         bx = self.ortho_surface
-        if bx == 0:
-            self.move_ortho_center_to(0)
-        elif bx == -1:
-            self.move_ortho_surface_right(move_upwards=False)
-        else:
-            for b in range(bx, 0, -1):
+        if bx < bx_center:
+            for b in range(bx, bx_center, 1):
                 if b%2 == 1:
-                    self.move_ortho_surface_left(move_upwards=False)
+                    self.move_ortho_surface_right(force=True, move_upwards=False)
                 elif b%2 == 0:
-                    self.move_ortho_surface_left(move_upwards=True)
-        assert (self.ortho_surface, self.ortho_center) == (0, 0)
+                    self.move_ortho_surface_right(force=True, move_upwards=True)
+        elif bx > bx_center:
+            for b in range(bx, bx_center, -1):
+                if b%2 == 1:
+                    self.move_ortho_surface_left(force=True, move_upwards=False)
+                elif b%2 == 0:
+                    self.move_ortho_surface_left(force=True, move_upwards=True)
+        assert self.ortho_surface == bx_center
+        if bx_center%2 == 1:
+            self.move_ortho_center_to(2*self.Ly-2)
+        elif bx_center%2 == 0:
+            self.move_ortho_center_to(0)
         return
 
     def get_column_expectation_values(self, h_mpos):
         """Compute the expectation values of a list of mpos by moving through the columns from left 
         to right with yang-baxter moves only."""
-        self.move_to_00()
+        self.move_orthogonality_column_to(1)
+        assert (self.ortho_surface, self.ortho_center) == (0, 0)
         es = []
         for n in range(1, 2*self.Lx):
             if n%2 == 1:
@@ -1316,7 +1326,8 @@ class isoTPS_Square(isoTPS.isoTPS):
         """Compute the expectation values of a list of two-site operators by moving through the 
         columns from left to right with yang-baxter moves only (move up and down the orthogonality
         column only on copy instances)."""
-        self.move_to_00()
+        self.move_orthogonality_column_to(1)
+        assert (self.ortho_surface, self.ortho_center) == (0, 0)
         es = []
         for bx in range(2*self.Lx-1):
             iso_peps = self.copy()
