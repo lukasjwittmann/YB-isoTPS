@@ -329,7 +329,7 @@ def split_dims(chi, D_max):
 def split_matrix_svd(A, chi):
     """
     Splits a (n x m) matrix A into a (n x chi) isometry B and a (chi x m) matrix C,
-    using Singular Value Decomposition. This function asssumes chi <= max(n, m).
+    using Singular Value Decomposition. This function asssumes chi <= n.
     If chi >= min(n, m), the decomposition is numerically exact and the QR decomposition is used, 
     because it is faster than the SVD in practice.
 
@@ -347,25 +347,23 @@ def split_matrix_svd(A, chi):
     C : np.ndarray of shape (chi, m)
         second factor of the split. A \approx B@C.
     """
-    assert(chi > 0)
-    if chi == min(A.shape[0], A.shape[1]):
-        return np.linalg.qr(A)
-    elif chi > min(A.shape[0], A.shape[1]):
-        Q, R = np.linalg.qr(A)
-        Q = Q @ np.eye(Q.shape[1], chi)
-        Q, R2 = np.linalg.qr(Q)
-        R = R2 @ np.eye(chi, R.shape[0]) @ R
-        return Q, R
+    n, m = A.shape
+    assert 1 <= chi <= n, f"for ({n} x {m}) matrix, chi must be between 1 and {n}."
+    if chi >= min(n, m):
+        if chi > m:  
+            Q, R = np.linalg.qr(A, mode="complete")  
+            return Q[:, :chi], R[:chi, :]
+        else:
+            Q, R = np.linalg.qr(A, mode="reduced") 
+            return Q, R
     # Split and truncate A via SVD
     B, S, V = safe_svd(A, full_matrices=False)
     piv = np.argsort(S)[::-1][:chi]
     B, S, V = B[:, piv], S[piv], V[piv, :]
     # Renormalize
     S /= np.linalg.norm(S)
-    # Isometrize B
-    B, R = np.linalg.qr(B)
     # Absorb R and S into V to form C
-    C = R @ np.diag(S) @ V
+    C = np.diag(S) @ V
     return B, C
 
 def split_matrix_iterate_QR(A, chi, N_iters, eps=1e-9, C0=None, smart_initial_condition=True, normalize=True, log_iterates=False):

@@ -3,7 +3,7 @@ from ...utility import utility
 from ...utility.tripartite_decomposition import tripartite_decomposition
 from ...utility import debug_logging
 
-def yang_baxter_move(W1, W2, T, D_max, chi_max, larger_bond_direction="down", options={"mode": "svd"}, debug_logger=debug_logging.DebugLogger()):
+def yang_baxter_move(W1, W2, T, D_max, chi_max, min_dims=False, larger_bond_direction="down", options={"mode": "svd"}, debug_logger=debug_logging.DebugLogger()):
     """
     Performs the Yang baxter move
 
@@ -69,7 +69,11 @@ def yang_baxter_move(W1, W2, T, D_max, chi_max, larger_bond_direction="down", op
         i, rd, ld, l2, u2, ru, d2 = contr.shape
         contr = np.reshape(contr, (i*rd*ld*l2, u2*ru*d2)) # i, rd, ld, l2, u2, ru, d2 -> (i, rd, ld, l2), (u2, ru, d2)
         # Call subroutine to seperate into T and W
-        T, W2 = utility.split_matrix_svd(contr, min(D_max, contr.shape[0]))
+        if min_dims:
+            D = min(contr.shape[0], contr.shape[1], D_max)
+        else:
+            D = min(contr.shape[0], D_max)
+        T, W2 = utility.split_matrix_svd(contr, D)
         T = np.reshape(T, (i, rd, ld, l2, T.shape[-1])) # (i, rd, ld, l2), D -> i, rd, ld, l2, D = i, rd, ld, lu, ru
         T = np.transpose(T, (0, 4, 1, 2, 3)) # i, rd, ld, lu, ru -> i, ru, rd, ld, lu
         W2 = np.reshape(W2, (W2.shape[0], u2, ru, d2)) # D, (u2, ru, d2) ->  D, u2 ru, d2 =  l2, u2, r2, d2
@@ -85,7 +89,11 @@ def yang_baxter_move(W1, W2, T, D_max, chi_max, larger_bond_direction="down", op
         i, ru, l1, lu, u1, rd, d1 = contr.shape
         contr = np.reshape(contr, (i*ru*l1*lu, u1*rd*d1)) # i, ru, l1, lu, u1, rd, d1 -> (i, ru, l1, lu), (u1, rd, d1)
         # Call subroutine to seperate into T and W
-        T, W1 = utility.split_matrix_svd(contr, min(D_max, contr.shape[0]))
+        if min_dims:
+            D = min(contr.shape[0], contr.shape[1], D_max)
+        else:
+            D = min(contr.shape[0], D_max)
+        T, W1 = utility.split_matrix_svd(contr, D)
         T = np.reshape(T, (i, ru, l1, lu, T.shape[-1])) # (i, ru, l1, lu), D -> i, ru, l1, lu, D = i, ru, ld, lu, rd
         T = np.transpose(T, (0, 1, 4, 2, 3)) # i, ru, ld, lu, rd -> i, ru, rd, ld, lu
         W1 = np.reshape(W1, (W1.shape[0], u1, rd, d1)) # D, (u1, rd, d1) -> D, u1, rd, d1 -> l1, u1, r1, d1
@@ -103,10 +111,14 @@ def yang_baxter_move(W1, W2, T, D_max, chi_max, larger_bond_direction="down", op
     l, lp1, i, d, rd, up1, ru = psi.shape
     
     # 3.) Determine the split bond dimensions
+    if min_dims:
+        D1D2 = min(l*lp1*i, d*rd*up1*ru)
+    else: 
+        D1D2 = l*lp1*i
     if larger_bond_direction == "down":
-        D2, D1 = utility.split_dims(l*lp1*i, D_max)
+        D2, D1 = utility.split_dims(D1D2, D_max)
     elif larger_bond_direction == "up":
-        D1, D2 = utility.split_dims(l*lp1*i, D_max)
+        D1, D2 = utility.split_dims(D1D2, D_max)
     else:
         raise ValueError(f"\"{larger_bond_direction}\" is an invalid larger_bond_direction, must be one of [\"up\", \"down\"].")
         

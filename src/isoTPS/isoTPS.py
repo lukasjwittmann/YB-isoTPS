@@ -365,27 +365,27 @@ class isoTPS:
             success = False
         return success
 
-    def move_ortho_center_up(self):
+    def move_ortho_center_up(self, min_dims=False):
         """
         Moves the orthogonality center one tensor upwards along the orthogonality surface.
         Note: This function may need to be overwritten by some derived classes for isoTPS on different lattices.
         """
         if self.ortho_center >= 2 * self.Ly - 2:
             return
-        self.Ws[self.ortho_center], self.Ws[self.ortho_center + 1] = shifting_ortho_center.move_ortho_center_up(self.Ws[self.ortho_center], self.Ws[self.ortho_center + 1], chi_max=self.chi_max, options=self.shifting_options)
+        self.Ws[self.ortho_center], self.Ws[self.ortho_center + 1] = shifting_ortho_center.move_ortho_center_up(self.Ws[self.ortho_center], self.Ws[self.ortho_center + 1], chi_max=self.chi_max, min_dims=min_dims, options=self.shifting_options)
         self.ortho_center += 1
 
-    def move_ortho_center_down(self):
+    def move_ortho_center_down(self, min_dims=False):
         """
         Moves the orthogonality center one tensor downwards along the orthogonality surface.
         Note: This function may need to be overwritten by some derived classes for isoTPS on different lattices.
         """
         if self.ortho_center == 0:
             return
-        self.Ws[self.ortho_center - 1], self.Ws[self.ortho_center] = shifting_ortho_center.move_ortho_center_down(self.Ws[self.ortho_center - 1], self.Ws[self.ortho_center], chi_max=self.chi_max, options=self.shifting_options)
+        self.Ws[self.ortho_center - 1], self.Ws[self.ortho_center] = shifting_ortho_center.move_ortho_center_down(self.Ws[self.ortho_center - 1], self.Ws[self.ortho_center], chi_max=self.chi_max, min_dims=min_dims, options=self.shifting_options)
         self.ortho_center -= 1
 
-    def move_ortho_surface_left(self, force=False, move_upwards=True):
+    def move_ortho_surface_left(self, min_dims=False, force=False, move_upwards=True):
         """
         Moves the orthogonality hypersurface one column to the left.
         Note: This function should be overwritten in derived classes, as it is lattice specific!
@@ -402,7 +402,7 @@ class isoTPS:
         """
         raise NotImplementedError("function move_ortho_surface_left() is not implemented in isoTPS base class!")
 
-    def move_ortho_surface_right(self, force=False, move_upwards=True):
+    def move_ortho_surface_right(self, min_dims=False, force=False, move_upwards=True):
         """
         Moves the orthogonality hypersurface one column to the right.
         Note: This function should be overwritten in derived classes, as it is lattice specific!
@@ -419,7 +419,7 @@ class isoTPS:
         """
         raise NotImplementedError("function move_ortho_surface_right() is not implemented in isoTPS base class!")
 
-    def move_ortho_surface_to(self, ortho_surface):
+    def move_ortho_surface_to(self, ortho_surface, min_dims=False):
         """
         Moves the orthogonality hypersurface to the given index
 
@@ -430,11 +430,11 @@ class isoTPS:
         """
         ortho_surface = max(0, min(self.Lx*2-2, ortho_surface))
         while self.ortho_surface < ortho_surface:
-            self.move_ortho_surface_right()
+            self.move_ortho_surface_right(min_dims)
         while self.ortho_surface > ortho_surface:
-            self.move_ortho_surface_left()
+            self.move_ortho_surface_left(min_dims)
 
-    def move_ortho_center_to(self, ortho_center):
+    def move_ortho_center_to(self, ortho_center, min_dims=False):
         """
         Moves the orthogonality center to the given index along the current orthogonality hypersurface.
 
@@ -445,11 +445,11 @@ class isoTPS:
         """
         ortho_center = max(0, min(self.Ly*2-2, ortho_center))
         while self.ortho_center < ortho_center:
-            self.move_ortho_center_up()
+            self.move_ortho_center_up(min_dims)
         while self.ortho_center > ortho_center:
-            self.move_ortho_center_down()
+            self.move_ortho_center_down(min_dims)
 
-    def move_to(self, ortho_surface, ortho_center):
+    def move_to(self, ortho_surface, ortho_center, min_dims=False):
         """
         Moves the orthoganilty hypersurface and center to the given indices 
 
@@ -460,10 +460,10 @@ class isoTPS:
         ortho_center : int
             the index the orthogonality center is to be moved to
         """
-        self.move_ortho_surface_to(ortho_surface)
-        self.move_ortho_center_to(ortho_center)
+        self.move_ortho_surface_to(ortho_surface, min_dims)
+        self.move_ortho_center_to(ortho_center, min_dims)
 
-    def move_to_loc(self, location="upper right"):
+    def move_to_loc(self, location="upper right", min_dims=False):
         """
         Moves the orthogonality center to the specified location.
 
@@ -474,10 +474,10 @@ class isoTPS:
             orthogonality center should be moved to. 
         """
         if location == "upper right":
-            self.move_to(self.Lx*2-2, self.Ly*2-2)
+            self.move_to(self.Lx*2-2, self.Ly*2-2, min_dims)
         elif location == "upper left":
-            self.move_to(0, self.Ly*2-2)
+            self.move_to(0, self.Ly*2-2, min_dims)
         elif location == "lower right":
-            self.move_to(self.Lx*2-2, 0)
+            self.move_to(self.Lx*2-2, 0, min_dims)
         elif location == "lower left":
             self.move_to(0, 0)

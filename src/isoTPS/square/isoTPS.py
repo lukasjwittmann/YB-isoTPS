@@ -58,9 +58,9 @@ class isoTPS_Square(isoTPS.isoTPS):
                 self.Ts[index] = _initialize_T_product_state(states[index])
                 index = self.get_index(x, y, 0)
                 self.Ts[index] = _initialize_T_product_state(states[index])
-            self.move_ortho_surface_left(force=True)
-            self.move_ortho_surface_left(force=True)
-        self.move_ortho_surface_right(force=True)
+            self.move_ortho_surface_left(min_dims=False, force=True)
+            self.move_ortho_surface_left(min_dims=False, force=True)
+        self.move_ortho_surface_right(min_dims=False, force=True)
         assert(self.ortho_surface == 0)
         self.debug_logger = temp_debug_logger
 
@@ -323,7 +323,7 @@ class isoTPS_Square(isoTPS.isoTPS):
             success = False
         return success
 
-    def perform_yang_baxter(self, W1_index, W2_index, T_index, flip, arrows_should_point_up=True):
+    def perform_yang_baxter(self, W1_index, W2_index, T_index, min_dims, flip, arrows_should_point_up=True):
         """
         Performs a Yang-Baxter move with the tensors at the given indices.
 
@@ -382,7 +382,7 @@ class isoTPS_Square(isoTPS.isoTPS):
         if self.debug_logger.log_algorithm_walltimes or self.debug_logger.log_yb_move_walltimes:
             start = time.time()
         # Perform YB move subroutine
-        Wm1_prime, W_prime, T_prime, error = yang_baxter_move.yang_baxter_move(W1, W2, T, self.D_max, self.chi_max, options=self.yb_options, debug_logger=self.debug_logger, larger_bond_direction=larger_bond_direction)
+        Wm1_prime, W_prime, T_prime, error = yang_baxter_move.yang_baxter_move(W1, W2, T, self.D_max, self.chi_max, min_dims, options=self.yb_options, debug_logger=self.debug_logger, larger_bond_direction=larger_bond_direction)
         # Save error and walltime (debug)
         if self.debug_logger.log_algorithm_walltimes or self.debug_logger.log_yb_move_walltimes:
             end = time.time()
@@ -407,10 +407,10 @@ class isoTPS_Square(isoTPS.isoTPS):
         if self.ortho_center == W1_index and self.ortho_center < len(self.Ws) - 1:
             self.ortho_center = W2_index
         if arrows_should_point_up == False and W2_index is not None:
-            self.move_ortho_center_down()
+            self.move_ortho_center_down(min_dims)
         return error
 
-    def move_ortho_surface_left(self, force=False, move_upwards=True):
+    def move_ortho_surface_left(self, min_dims=False, force=False, move_upwards=True):
         """
         Moves the orthogonality hypersurface one column to the left.
 
@@ -441,32 +441,32 @@ class isoTPS_Square(isoTPS.isoTPS):
                 Ws_before_YB = [utility.flip_W(W.copy()) for W in self.Ws] + [None]
         if move_upwards:
             # First, move the ortho center to the bottom
-            self.move_ortho_center_to(0)
+            self.move_ortho_center_to(0, min_dims)
             # Now, use the yang baxter move to shift the ortho surface, one tensor at a time
             if p == 0:
-                column_error += self.perform_yang_baxter(None, self.ortho_center, self.get_index(x, 0, 0), flip=True, arrows_should_point_up=True)
+                column_error += self.perform_yang_baxter(None, self.ortho_center, self.get_index(x, 0, 0), min_dims, flip=True, arrows_should_point_up=True)
                 for y in range(1, self.Ly):
-                    self.move_ortho_center_up()
-                    column_error += self.perform_yang_baxter(self.ortho_center, self.ortho_center + 1, self.get_index(x, y, 0), flip=True, arrows_should_point_up=True)
+                    self.move_ortho_center_up(min_dims)
+                    column_error += self.perform_yang_baxter(self.ortho_center, self.ortho_center + 1, self.get_index(x, y, 0), min_dims, flip=True, arrows_should_point_up=True)
             else:
                 for y in range(self.Ly - 1):
-                    column_error += self.perform_yang_baxter(self.ortho_center, self.ortho_center + 1, self.get_index(x, y, 1), flip=True, arrows_should_point_up=True)
-                    self.move_ortho_center_up()
-                column_error += self.perform_yang_baxter(self.ortho_center, None, self.get_index(x, self.Ly - 1, 1), flip=True, arrows_should_point_up=True)
+                    column_error += self.perform_yang_baxter(self.ortho_center, self.ortho_center + 1, self.get_index(x, y, 1), min_dims, flip=True, arrows_should_point_up=True)
+                    self.move_ortho_center_up(min_dims)
+                column_error += self.perform_yang_baxter(self.ortho_center, None, self.get_index(x, self.Ly - 1, 1), min_dims, flip=True, arrows_should_point_up=True)
         else:
             # First, move the ortho center to the top
-            self.move_ortho_center_to(2*self.Ly - 2)
+            self.move_ortho_center_to(2*self.Ly - 2, min_dims)
             # Now, use the yang baxter move to shift the ortho surface, one tensor at a time
             if p == 0:
                 for y in range(self.Ly-1, 0, -1):
-                    column_error += self.perform_yang_baxter(self.ortho_center - 1, self.ortho_center, self.get_index(x, y, 0), flip=True, arrows_should_point_up=False)
-                    self.move_ortho_center_down()
-                column_error += self.perform_yang_baxter(None, self.ortho_center, self.get_index(x, 0, 0), flip=True, arrows_should_point_up=True)
+                    column_error += self.perform_yang_baxter(self.ortho_center - 1, self.ortho_center, self.get_index(x, y, 0), min_dims, flip=True, arrows_should_point_up=False)
+                    self.move_ortho_center_down(min_dims)
+                column_error += self.perform_yang_baxter(None, self.ortho_center, self.get_index(x, 0, 0), min_dims, flip=True, arrows_should_point_up=True)
             else:
-                column_error += self.perform_yang_baxter(self.ortho_center, None, self.get_index(x, self.Ly - 1, 1), flip=True, arrows_should_point_up=False)
+                column_error += self.perform_yang_baxter(self.ortho_center, None, self.get_index(x, self.Ly - 1, 1), min_dims, flip=True, arrows_should_point_up=False)
                 for y in range(self.Ly-2, -1, -1):
-                    self.move_ortho_center_down()
-                    column_error += self.perform_yang_baxter(self.ortho_center - 1, self.ortho_center, self.get_index(x, y, 1), flip=True, arrows_should_point_up=False)
+                    self.move_ortho_center_down(min_dims)
+                    column_error += self.perform_yang_baxter(self.ortho_center - 1, self.ortho_center, self.get_index(x, y, 1), min_dims, flip=True, arrows_should_point_up=False)
         self.ortho_surface -= 1
         if self.debug_logger.log_approximate_column_error_yb:
             self.debug_logger.append_to_log_list("approximate_column_errors", column_error)
@@ -506,7 +506,7 @@ class isoTPS_Square(isoTPS.isoTPS):
                 self.debug_logger.append_to_log_list("column_errors_yb_before_variational_optimization", optimizer.compute_error())
 
 
-    def move_ortho_surface_right(self, force=False, move_upwards=True):
+    def move_ortho_surface_right(self, min_dims=False, force=False, move_upwards=True):
         """
         Moves the orthogonality hypersurface one column to the right.
         Note: This function should be overwritten in derived classes, as it is lattice specific!
@@ -539,32 +539,32 @@ class isoTPS_Square(isoTPS.isoTPS):
                 Ws_before_YB = [None] + [W.copy() for W in self.Ws]
         if move_upwards:
             # First, move the ortho center to the bottom
-            self.move_ortho_center_to(0)
+            self.move_ortho_center_to(0, min_dims)
             # Now, use the yang baxter move to shift the ortho surface, one tensor at a time
             if p == 0:
                 for y in range(self.Ly - 1):
-                    column_error += self.perform_yang_baxter(self.ortho_center, self.ortho_center + 1, self.get_index(x, y, 1), flip=False)
-                    self.move_ortho_center_up()
-                column_error +=  self.perform_yang_baxter(self.ortho_center, None, self.get_index(x, self.Ly - 1, 1), flip=False)
+                    column_error += self.perform_yang_baxter(self.ortho_center, self.ortho_center + 1, self.get_index(x, y, 1), min_dims, flip=False)
+                    self.move_ortho_center_up(min_dims)
+                column_error +=  self.perform_yang_baxter(self.ortho_center, None, self.get_index(x, self.Ly - 1, 1), min_dims, flip=False)
             else:
-                column_error += self.perform_yang_baxter(None, self.ortho_center, self.get_index(x + 1, 0, 0), flip=False)
+                column_error += self.perform_yang_baxter(None, self.ortho_center, self.get_index(x + 1, 0, 0), min_dims, flip=False)
                 for y in range(1, self.Ly):
-                    self.move_ortho_center_up()
-                    column_error += self.perform_yang_baxter(self.ortho_center, self.ortho_center + 1, self.get_index(x + 1, y, 0), flip=False)
+                    self.move_ortho_center_up(min_dims)
+                    column_error += self.perform_yang_baxter(self.ortho_center, self.ortho_center + 1, self.get_index(x + 1, y, 0), min_dims, flip=False)
         else:
             # First, move the ortho center to the top
-            self.move_ortho_center_to(2*self.Ly - 2)
+            self.move_ortho_center_to(2*self.Ly - 2, min_dims)
             # Now, use the yang baxter move to shift the ortho surface, one tensor at a time
             if p == 0:
-                column_error += self.perform_yang_baxter(self.ortho_center, None, self.get_index(x, self.Ly - 1, 1), flip=False, arrows_should_point_up=False)
+                column_error += self.perform_yang_baxter(self.ortho_center, None, self.get_index(x, self.Ly - 1, 1), min_dims, flip=False, arrows_should_point_up=False)
                 for y in range(self.Ly-2, -1, -1):
-                    self.move_ortho_center_down()
-                    column_error += self.perform_yang_baxter(self.ortho_center - 1, self.ortho_center, self.get_index(x, y, 1), flip=False, arrows_should_point_up=False)
+                    self.move_ortho_center_down(min_dims)
+                    column_error += self.perform_yang_baxter(self.ortho_center - 1, self.ortho_center, self.get_index(x, y, 1), min_dims, flip=False, arrows_should_point_up=False)
             else:
                 for y in range(self.Ly-1, 0, -1):
-                    column_error += self.perform_yang_baxter(self.ortho_center - 1, self.ortho_center, self.get_index(x + 1, y, 0), flip=False, arrows_should_point_up=False)
-                    self.move_ortho_center_down()
-                column_error += self.perform_yang_baxter(None, self.ortho_center, self.get_index(x + 1, 0, 0), flip=False, arrows_should_point_up=True)
+                    column_error += self.perform_yang_baxter(self.ortho_center - 1, self.ortho_center, self.get_index(x + 1, y, 0), min_dims, flip=False, arrows_should_point_up=False)
+                    self.move_ortho_center_down(min_dims)
+                column_error += self.perform_yang_baxter(None, self.ortho_center, self.get_index(x + 1, 0, 0), min_dims, flip=False, arrows_should_point_up=True)
         self.ortho_surface += 1
         if self.debug_logger.log_approximate_column_error_yb:
             self.debug_logger.append_to_log_list("approximate_column_errors", column_error)
@@ -841,7 +841,7 @@ class isoTPS_Square(isoTPS.isoTPS):
         """
         return expectation_values.compute_norm_twosite(*self.get_environment_twosite())
 
-    def compute_expectation_values_onesite(self, ops):
+    def compute_expectation_values_onesite(self, ops, min_dims=False):
         """
         Computes one site expectation values and returns a list with one or more expectation values per site
 
@@ -861,7 +861,7 @@ class isoTPS_Square(isoTPS.isoTPS):
         for i in range(len(ops)):
             result.append([])
         for x in range(self.Lx):
-            self.move_to(2*x, 0)
+            self.move_to(2*x, 0, min_dims)
             T, W, Wp1 = self.get_environment_onesite(left_environment=True)
             for i, op in enumerate(ops):
                 result[i].append(expectation_values.expectation_value_onesite(T, W, Wp1, op))
@@ -871,10 +871,10 @@ class isoTPS_Square(isoTPS.isoTPS):
                 for i, op in enumerate(ops):
                     result[i].append(expectation_values.expectation_value_onesite(T, W, Wp1, op))
                 left_environment = not left_environment
-                self.move_ortho_center_up()
+                self.move_ortho_center_up(min_dims)
         return np.real_if_close(result)
 
-    def compute_expectation_values_twosite(self, ops):
+    def compute_expectation_values_twosite(self, ops, min_dims=False):
         """
         Computes two site expectation values and returns a list with one expectation value per bond
         
@@ -890,11 +890,11 @@ class isoTPS_Square(isoTPS.isoTPS):
         """ 
         result = []
         for xi in range(2 * self.Lx - 1):
-            self.move_to(xi, 0)
+            self.move_to(xi, 0, min_dims)
             for yi in range(2 * self.Ly - 1):
                 T1, T2, Wm1, W, Wp1 = self.get_environment_twosite()
                 result.append(expectation_values.expectation_value_twosite(T1, T2, Wm1, W, Wp1, ops[xi * (2 * self.Ly - 1) + yi]))
-                self.move_ortho_center_up()
+                self.move_ortho_center_up(min_dims)
         return np.real_if_close(result)
 
     def perform_TEBD_at_ortho_center(self, U_bonds):
@@ -938,7 +938,7 @@ class isoTPS_Square(isoTPS.isoTPS):
         self.set_environment_twosite(T1, T2, Wm1, W, Wp1)
         return error
 
-    def perform_TEBD_along_ortho_surface_brickwall(self, U_bonds):
+    def perform_TEBD_along_ortho_surface_brickwall(self, U_bonds, min_dims=False):
         """
         Applies TEBD update operators along the current orthogonality hypersurface in a brickwall pattern.
         First updates all even bonds and then all odd bonds.
@@ -959,23 +959,23 @@ class isoTPS_Square(isoTPS.isoTPS):
             list of time evolution bond operators
         """
         # apply update on even bonds
-        self.move_ortho_center_to(0)
+        self.move_ortho_center_to(0, min_dims)
         column_error = 0
         for _ in range(0, 2 * self.Ly - 1, 2):
             column_error += self.perform_TEBD_at_ortho_center(U_bonds)
-            self.move_ortho_center_up()
-            self.move_ortho_center_up()
+            self.move_ortho_center_up(min_dims)
+            self.move_ortho_center_up(min_dims)
         # apply update on odd bonds
         if self.Ly > 1:
-            self.move_ortho_center_to(2*self.Ly-3)
+            self.move_ortho_center_to(2*self.Ly-3, min_dims)
             for _ in range(2*self.Ly-3, 0, -2):
                 column_error += self.perform_TEBD_at_ortho_center(U_bonds)
-                self.move_ortho_center_down()
-                self.move_ortho_center_down()
+                self.move_ortho_center_down(min_dims)
+                self.move_ortho_center_down(min_dims)
         if self.debug_logger.log_approximate_column_error_tebd:
             self.debug_logger.append_to_log_list("approximate_column_error_tebd", column_error)
 
-    def perform_TEBD_along_ortho_surface_chain(self, U_bonds, move_upwards=True):
+    def perform_TEBD_along_ortho_surface_chain(self, U_bonds, min_dims=False, move_upwards=True):
         """
         Applies TEBD update operators along the current orthogonality surface in a chain pattern.
 
@@ -1005,19 +1005,19 @@ class isoTPS_Square(isoTPS.isoTPS):
         """
         column_error = 0
         if move_upwards:
-            self.move_ortho_center_to(0)
+            self.move_ortho_center_to(0, min_dims)
             for _ in range(2*self.Ly-1):
                 column_error += self.perform_TEBD_at_ortho_center(U_bonds)
-                self.move_ortho_center_up() 
+                self.move_ortho_center_up(min_dims) 
         else:
-            self.move_ortho_center_to(2*self.Ly-2)
+            self.move_ortho_center_to(2*self.Ly-2, min_dims)
             for _ in range(2*self.Ly-1):
                 column_error += self.perform_TEBD_at_ortho_center(U_bonds)
-                self.move_ortho_center_down() 
+                self.move_ortho_center_down(min_dims) 
         if self.debug_logger.log_approximate_column_error_tebd:
             self.debug_logger.append_to_log_list("approximate_column_error_tebd", column_error)
 
-    def perform_TEBD1(self, U_bonds, N_steps):
+    def perform_TEBD1(self, U_bonds, N_steps, min_dims=False):
         """
         Performs N_steps of full first-order TEBD update steps by applying bond operators in a brickwall fashion.
         During one update step, the orthogonality surface is moved once from the left to the right and back.
@@ -1032,18 +1032,18 @@ class isoTPS_Square(isoTPS.isoTPS):
         for _ in range(N_steps):
             self.reset_time_counters()
             # apply update on even surfaces
-            self.move_ortho_surface_to(0)
+            self.move_ortho_surface_to(0, min_dims)
             for _ in range(0, 2 * self.Lx - 1, 2):
-                self.perform_TEBD_along_ortho_surface_brickwall(U_bonds)
-                self.move_ortho_surface_right()
-                self.move_ortho_surface_right()
+                self.perform_TEBD_along_ortho_surface_brickwall(U_bonds, min_dims)
+                self.move_ortho_surface_right(min_dims)
+                self.move_ortho_surface_right(min_dims)
             # apply update on odd surfaces
             if self.Lx > 1:
-                self.move_ortho_surface_to(2*self.Lx-3)
+                self.move_ortho_surface_to(2*self.Lx-3, min_dims)
                 for _ in range(2*self.Lx-3, 0, -2):
-                    self.perform_TEBD_along_ortho_surface_brickwall(U_bonds)
-                    self.move_ortho_surface_left()
-                    self.move_ortho_surface_left()
+                    self.perform_TEBD_along_ortho_surface_brickwall(U_bonds, min_dims)
+                    self.move_ortho_surface_left(min_dims)
+                    self.move_ortho_surface_left(min_dims)
             # Debug logging
             if self.debug_logger.log_algorithm_walltimes:
                 self.debug_logger.append_to_log_list(("algorithm_walltimes", "yb_move"), self.time_counter_yb_move)
@@ -1051,7 +1051,7 @@ class isoTPS_Square(isoTPS.isoTPS):
                 self.debug_logger.append_to_log_list(("algorithm_walltimes", "variational_column_optimization"), self.time_counter_variational_column_optimization)
 
 
-    def perform_TEBD2(self, U_bonds, N_steps):
+    def perform_TEBD2(self, U_bonds, N_steps, min_dims=False):
         """
         Performs N_steps of full second-order TEBD update steps by applying bond operators in a chain fashion.
         During one update step, the orthogonality surface is moved once from the left to the right and back.
@@ -1065,13 +1065,13 @@ class isoTPS_Square(isoTPS.isoTPS):
         """
         for _ in range(N_steps):
             self.reset_time_counters()
-            self.move_to(0, 0)
+            self.move_to(0, 0, min_dims)
             for _ in range(2*self.Lx-1):
-                self.perform_TEBD_along_ortho_surface_chain(U_bonds, move_upwards=True)
-                self.move_ortho_surface_right(move_upwards=False)
+                self.perform_TEBD_along_ortho_surface_chain(U_bonds, min_dims, move_upwards=True)
+                self.move_ortho_surface_right(min_dims, move_upwards=False)
             for _ in range(2*self.Lx-1):
-                self.perform_TEBD_along_ortho_surface_chain(U_bonds, move_upwards=False)
-                self.move_ortho_surface_left(move_upwards=True)
+                self.perform_TEBD_along_ortho_surface_chain(U_bonds, min_dims, move_upwards=False)
+                self.move_ortho_surface_left(min_dims, move_upwards=True)
             # Debug logging
             if self.debug_logger.log_algorithm_walltimes:
                 self.debug_logger.append_to_log_list(("algorithm_walltimes", "yb_move"), self.time_counter_yb_move)
@@ -1180,7 +1180,7 @@ class isoTPS_Square(isoTPS.isoTPS):
     
 
     @classmethod
-    def from_qubit_product_state(cls, Lx, Ly, D_max, chi_max, spin_orientation):
+    def from_qubit_product_state(cls, Lx, Ly, D_max, chi_max, spin_orientation, min_dims=False):
         """For lattice lengths Lx, Ly and maximal bond/column dimensions D_max/chi_max, initialize 
         a product state with all spin-1/2s in spin_orientation."""
         peps_parameters = {
@@ -1223,9 +1223,9 @@ class isoTPS_Square(isoTPS.isoTPS):
         (peps.ortho_surface, peps.ortho_center) = (2*Lx-1, 2*Ly-2)
         for bx in reversed(range(2*Lx)):
             if bx%2 == 1:
-                peps.move_ortho_surface_left(force=True, move_upwards=False)
+                peps.move_ortho_surface_left(min_dims, force=True, move_upwards=False)
             elif bx%2 == 0:
-                peps.move_ortho_surface_left(force=True, move_upwards=True)
+                peps.move_ortho_surface_left(min_dims, force=True, move_upwards=True)
         assert (peps.ortho_surface, peps.ortho_center) == (-1, 2*Ly-2)
         return peps
     
@@ -1272,7 +1272,7 @@ class isoTPS_Square(isoTPS.isoTPS):
             Cs.append(np.transpose(self.Ws[y].copy(), (3, 0, 2, 1)))  # l u r d -> d l r u
         return Cs
     
-    def move_orthogonality_column_to(self, nx_center):
+    def move_orthogonality_column_to(self, nx_center, min_dims=False):
         """Move the orthogonality column to nx_center in {0, ..., 2Lx}. Orthogonality column 0 is 
         left of the whole lattice, corresponding to ortho_surface=-1. Perform yang-baxter moves 
         up/down on even/odd orthogonality columns and end up with orthogonality center down/up for
@@ -1282,26 +1282,26 @@ class isoTPS_Square(isoTPS.isoTPS):
         if bx < bx_center:
             for b in range(bx, bx_center, 1):
                 if b%2 == 1:
-                    self.move_ortho_surface_right(force=True, move_upwards=False)
+                    self.move_ortho_surface_right(min_dims, force=True, move_upwards=False)
                 elif b%2 == 0:
-                    self.move_ortho_surface_right(force=True, move_upwards=True)
+                    self.move_ortho_surface_right(min_dims, force=True, move_upwards=True)
         elif bx > bx_center:
             for b in range(bx, bx_center, -1):
                 if b%2 == 1:
-                    self.move_ortho_surface_left(force=True, move_upwards=False)
+                    self.move_ortho_surface_left(min_dims, force=True, move_upwards=False)
                 elif b%2 == 0:
-                    self.move_ortho_surface_left(force=True, move_upwards=True)
+                    self.move_ortho_surface_left(min_dims, force=True, move_upwards=True)
         assert self.ortho_surface == bx_center
         if bx_center%2 == 1:
-            self.move_ortho_center_to(2*self.Ly-2)
+            self.move_ortho_center_to(2*self.Ly-2, min_dims)
         elif bx_center%2 == 0:
-            self.move_ortho_center_to(0)
+            self.move_ortho_center_to(0, min_dims)
         return
 
-    def get_column_expectation_values(self, h_mpos):
+    def get_column_expectation_values(self, h_mpos, min_dims=True):
         """Compute the expectation values of a list of mpos by moving through the columns from left 
         to right with yang-baxter moves only."""
-        self.move_orthogonality_column_to(1)
+        self.move_orthogonality_column_to(1, min_dims)
         assert (self.ortho_surface, self.ortho_center) == (0, 0)
         es = []
         for n in range(1, 2*self.Lx):
@@ -1312,21 +1312,21 @@ class isoTPS_Square(isoTPS.isoTPS):
                                                                     h_mpos[n-1])
                 es.append(e)
                 if n != 2*self.Lx-1:
-                    self.move_ortho_surface_right(move_upwards=True)
+                    self.move_ortho_surface_right(min_dims, move_upwards=True)
             elif n%2 == 0:
                 e = expectation_values.get_column_expectation_value(utility.get_flipped_As(self.get_ALs(n)), \
                                                                     utility.get_flipped_As(self.get_ARs(n)), \
                                                                     utility.get_flipped_Cs(self.get_Cs(n)), \
                                                                     utility.get_flipped_hs(h_mpos[n-1]))
                 es.append(e)
-                self.move_ortho_surface_right(move_upwards=False)
+                self.move_ortho_surface_right(min_dims, move_upwards=False)
         return np.real_if_close(es)
     
-    def get_bond_expectation_values(self, h_bonds):
+    def get_bond_expectation_values(self, h_bonds, min_dims=True):
         """Compute the expectation values of a list of two-site operators by moving through the 
         columns from left to right with yang-baxter moves only (move up and down the orthogonality
         column only on copy instances)."""
-        self.move_orthogonality_column_to(1)
+        self.move_orthogonality_column_to(1, min_dims)
         assert (self.ortho_surface, self.ortho_center) == (0, 0)
         es = []
         for bx in range(2*self.Lx-1):
@@ -1339,9 +1339,9 @@ class isoTPS_Square(isoTPS.isoTPS):
                                                                      h_bond)
                     es.append(e)
                     if by != 2*self.Ly-2:
-                        iso_peps.move_ortho_center_up()
+                        iso_peps.move_ortho_center_up(min_dims)
                 if bx != 2*self.Lx-2:
-                    self.move_ortho_surface_right(move_upwards=True)
+                    self.move_ortho_surface_right(min_dims, move_upwards=True)
             elif bx%2 == 1:
                 for by in reversed(range(2*self.Ly-1)):
                     assert(iso_peps.ortho_surface, iso_peps.ortho_center) == (bx, by)
@@ -1350,6 +1350,6 @@ class isoTPS_Square(isoTPS.isoTPS):
                                                                      h_bond)
                     es.append(e)
                     if by != 0:
-                        iso_peps.move_ortho_center_down()                    
-                self.move_ortho_surface_right(move_upwards=False)
+                        iso_peps.move_ortho_center_down(min_dims)                    
+                self.move_ortho_surface_right(min_dims, move_upwards=False)
         return np.real_if_close(es)
