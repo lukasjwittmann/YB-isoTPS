@@ -1321,6 +1321,31 @@ class isoTPS_Square(isoTPS.isoTPS):
                 es.append(e)
                 self.move_ortho_surface_right(min_dims, move_upwards=False)
         return np.real_if_close(es)
+
+    def get_column_expectation_values_side(self, h_mpos, min_dims=True):
+        """Compute the expectation values of a list of mpos by moving through the columns from left 
+        to right with yang-baxter moves only, and taking the orthogonality column on the right side
+        of two AL columns."""
+        self.move_orthogonality_column_to(2, min_dims)
+        assert (self.ortho_surface, self.ortho_center) == (1, 2*self.Ly-2)
+        es = []
+        for n in range(2, 2*self.Lx+1):
+            if n%2 == 0:
+                e = expectation_values.get_column_expectation_value_side(self.get_ALs(n-1), \
+                                                                         self.get_ALs(n), \
+                                                                         self.get_Cs(n), \
+                                                                         h_mpos[n-2])
+                es.append(e)
+                if n != 2*self.Lx:
+                    self.move_ortho_surface_right(min_dims, force=True, move_upwards=False)
+            elif n%2 == 1:
+                e = expectation_values.get_column_expectation_value_side(utility.get_flipped_As(self.get_ALs(n-1)), \
+                                                                         utility.get_flipped_As(self.get_ALs(n)), \
+                                                                         utility.get_flipped_Cs(self.get_Cs(n)), \
+                                                                         utility.get_flipped_hs(h_mpos[n-2]))
+                es.append(e)
+                self.move_ortho_surface_right(min_dims, force=True, move_upwards=True)
+        return np.real_if_close(es)
     
     def get_bond_expectation_values(self, h_bonds, min_dims=True):
         """Compute the expectation values of a list of two-site operators by moving through the 

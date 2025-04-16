@@ -270,8 +270,27 @@ def expectation_value_twosite(T1, T2, Wm1, W, Wp1, op):
 
 
 def get_column_expectation_value(ALs, ARs, Cs, hs):
-    """For orthogonality column tensors Cs and left/right orthonormal site tensors ALs/ARs, compute
-    the expectation value of the mpo hs."""
+    """For orthogonality column tensors Cs between left and right orthonormal site tensors ALs and 
+    ARs, compute the expectation value of the mpo hs without compression.
+    
+    e = <(AL)(h)(AL*)|(C)(C*)|(AR)(h)(AR*)>.
+
+    We choose the following convention (shown for the case L=2):
+
+                              .. (AR[1]h[3]AR[1]*)
+                              ||/      / /        
+                        ==(C[2]C[2]*)==           
+                     / /     /||                   
+            (AL[1]h[2]AL[1]*) ||                   
+                     \ \     \||                  
+    e   =               ==(C[1]C[1]*)==           
+                              ||\      \ \        
+                              || (AR[0]h[1]AR[0]*)
+                              ||/      / /        
+                        ==(C[0]C[0]*)==           
+                     / /     /||                   
+            (AL[0]h[0]AL[0]*) ..                  
+    """
     assert len(ALs) == len(ARs) == (len(Cs)+1)//2 == len(hs)//2
     assert np.shape(ALs[0])[1] == np.shape(ALs[0])[3] \
             == np.shape(hs[0])[0] == np.shape(Cs[0])[0] == 1
@@ -297,4 +316,52 @@ def get_column_expectation_value(ALs, ARs, Cs, hs):
                     DP, UP)
     assert np.shape(e) == (1, 1)
     e = e[0, 0]
+    return np.real_if_close(e)
+
+
+def get_column_expectation_value_side(A1s, A2s, Cs, hs):
+    """For orthogonality column tensors Cs right/left of left/right orthonormal site tensors A1s, 
+    A2s, compute the expectation value of the mpo hs without compression.
+    
+    e = <(A1A2)(h)(A1A2*)|(C)(C*)>.
+
+    We choose the following convention (shown for the case L=2):
+
+                        (A2[1]h[3]A2[1]*)     ..
+                         / / /       \ \      ||       
+                        / / /           ==(C[2]C[2]*)==           
+                       / / /                  ||                   
+            (A1[1]h[2]A1[1]*)                 ||                   
+                       \ \ \                  ||                  
+    e   =               \ \ \            ==(C[1]C[1]*)==           
+                         \ \ \       / /      ||        
+                        (A2[0]h[1]A2[0]*)     ||
+                         / / /       \ \      ||       
+                        / / /            ==(C[0]C[0]*)==           
+                       / / /                  ||                   
+            (A1[0]h[0]A1[0]*)                 ..    
+    """  
+    assert len(A1s) == len(A2s) == (len(Cs)+1)//2 == len(hs)//2
+    assert np.shape(A1s[0])[1] == np.shape(A1s[0])[3] \
+           == np.shape(hs[0])[0] == np.shape(Cs[0])[0] == 1
+    A1 = A1s[0][:, 0, :, 0, :]
+    h = hs[0][0, :, :, :]
+    DP = oe.contract("abc,dea,ebf->cdf", \
+                     A1, h, np.conj(A1))
+    DP = DP[:, :, :, np.newaxis, np.newaxis]
+    assert np.shape(A2s[-1])[2] == np.shape(A2s[-1])[4] \
+           == np.shape(hs[-1])[1] == np.shape(Cs[-1])[3] == 1
+    A2 = A2s[-1][:, :, 0, :, 0] 
+    h = hs[-1][:, 0, :, :]
+    C = Cs[-1][:, :, :, 0]
+    UP = oe.contract("abc,dea,efg,hci,jgi->bdfhj", \
+                     A2, h, np.conj(A2), C, np.conj(C))
+    for n in range(len(A1s)-1):
+        DP = oe.contract("abcde,faghi,bjkf,kclmn,dhop,emoq,pirs,qnrt->gjlst", \
+                         DP, A2s[n], hs[(2*n)+1], np.conj(A2s[n]), \
+                         Cs[2*n], np.conj(Cs[2*n]), Cs[2*n+1], np.conj(Cs[2*n+1])) 
+        DP = oe.contract("abcde,fghai,bjkf,kghcl->ijlde", \
+                         DP, A1s[n+1], hs[2*(n+1)], np.conj(A1s[n+1])) 
+    e = oe.contract("abcde,abcde->", \
+                    DP, UP)  
     return np.real_if_close(e)
