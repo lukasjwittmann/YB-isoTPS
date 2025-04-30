@@ -1177,12 +1177,14 @@ class isoTPS_Square(isoTPS.isoTPS):
         T_index = self.get_index(x, self.Ly - 1, 1)
         psi = np.tensordot(self.Ts[T_index][state[T_index], 0, 0, :, 0], psi, ([0], [0])) # [ld]; [r_N]
         return psi.item()
-    
+
 
     @classmethod
     def from_qubit_product_state(cls, Lx, Ly, D_max, chi_max, spin_orientation, min_dims=False):
         """For lattice lengths Lx, Ly and maximal bond/column dimensions D_max/chi_max, initialize 
-        a product state with all spin-1/2s in spin_orientation."""
+        a product state with all spin-1/2s in spin_orientation. Move the orthogonality from the very
+        right to the very left with Yang-Baxter moves (where min_dims=False paddes the tensors with
+        zeros to reach maximal dimensions)."""
         peps_parameters = {
             "Lx": Lx,
             "Ly": Ly,
@@ -1228,6 +1230,194 @@ class isoTPS_Square(isoTPS.isoTPS):
                 peps.move_ortho_surface_left(min_dims, force=True, move_upwards=True)
         assert (peps.ortho_surface, peps.ortho_center) == (-1, 2*Ly-2)
         return peps
+    
+    @classmethod
+    def from_random_state(cls, Lx, Ly, D_max, chi_max, d=2):
+        """For lattice lengths Lx, Ly and maximal bond/column dimensions D_max/chi_max, initialize 
+        a random state for d-dimensional spins. Put the orthogonality column on the very left and 
+        let the bond dimensions of the right isometric tensors grow till they reach D_max."""
+        peps_parameters = {
+            "Lx": Lx,
+            "Ly": Ly,
+            "D_max": D_max,
+            "chi_max": chi_max,
+            "d": d,
+            "yb_options" : { 
+                "mode" : "svd",
+                "disentangle": True,
+                "disentangle_options": {
+                    "mode": "renyi_approx",
+                    "renyi_alpha": 0.5,
+                    "method": "trm",
+                    "N_iters": 100,
+                }
+            },
+            "tebd_options": {
+                "mode" : "iterate_polar",
+                "N_iters": 100,
+            }
+        }
+        peps = cls(**peps_parameters)
+        from ......matrix_decompositions import qr_positive
+        from .....c_mps import MPS
+        from .....d_expectation_values import get_flipped_Cs
+        def get_random_AR(d, Drd, Dru, Dld, Dlu):
+            assert Drd <= D_max and Dru <= D_max and Dld <= D_max and Dlu <= D_max
+            assert d * Drd * Dru >= Dld * Dlu
+            AR, _ = qr_positive(np.random.normal(size=(d * Dru * Drd, Dld * Dlu)))
+            AR = np.reshape(AR, (d, Dru, Drd, Dld, Dlu))
+            return AR
+        # right isometric tensors
+        ARs_columns = []
+        Drs = [1] * (2*Ly-1)
+        for x in range(Lx):
+            # p=1 column
+            AR2s = []
+            for y in range(Ly-1):
+                Drd, Dru = Drs[2*y], Drs[2*y+1]
+                Dld, Dlu = utility.split_dims(d * Drd * Dru, D_max)
+                AR2s.append(get_random_AR(d, Drd, Dru, Dld, Dlu))
+                Drs[2*y], Drs[2*y+1] = Dld, Dlu
+            Drd = Drs[2*Ly-2]
+            Dld = min(Drd * d, D_max)
+            AR2s.append(get_random_AR(d, Drd, 1, Dld, 1))
+            Drs[2*Ly-2] = Dld
+            # p=0 column
+            AR1s = []
+            Dru = Drs[0]
+            Dlu = min(Dru * d, D_max)
+            AR1s.append(get_random_AR(d, 1, Dru, 1, Dlu))
+            Drs[0] = Dlu
+            for y in range(1, Ly):
+                Drd, Dru = Drs[2*y-1], Drs[2*y]
+                Dld, Dlu = utility.split_dims(d * Drd * Dru, D_max)
+                AR1s.append(get_random_AR(d, Drd, Dru, Dld, Dlu))
+                Drs[2*y-1], Drs[2*y] = Dld, Dlu
+            # whole column
+            ARs = []
+            for y in range(Ly):
+                ARs.append(AR1s[y])
+                ARs.append(AR2s[y])
+            ARs_columns.append(ARs)
+        Ts = []
+        for ARs in ARs_columns[::-1]:
+            Ts.extend(ARs)
+        peps.Ts = Ts
+        # orthogonality column
+        Ds = [(1, Dr) for Dr in Drs]
+        Cs = get_flipped_Cs(MPS.from_random_up_isometries(Ds[::-1], chi_max).Ms)
+        peps.Ws = [np.transpose(C.copy(), (1, 3, 2, 0)) for C in Cs]
+        peps.ortho_surface, peps.ortho_center = -1, 2*Ly-2
+        return peps
+    
+    @classmethod
+    def from_perturbed_qubit_product_state(cls, Lx, Ly, D_max, chi_max, spin_orientation, eps):
+        """For lattice lengths Lx, Ly and maximal bond/column dimensions D_max/chi_max, initialize 
+        a product state with all spin-1/2s in spin_orientation and perturb it with random tensors:
+
+        |iso_peps> ~ (1-eps) * |product> + eps * |random>.
+
+        Put the orthogonality column on the very left and let the bond dimensions of the right 
+        isometric tensors grow till they reach D_max.
+        """
+        peps_parameters = {
+            "Lx": Lx,
+            "Ly": Ly,
+            "D_max": D_max,
+            "chi_max": chi_max,
+            "d": 2,
+            "yb_options" : { 
+                "mode" : "svd",
+                "disentangle": True,
+                "disentangle_options": {
+                    "mode": "renyi_approx",
+                    "renyi_alpha": 0.5,
+                    "method": "trm",
+                    "N_iters": 100,
+                }
+            },
+            "tebd_options": {
+                "mode" : "iterate_polar",
+                "N_iters": 100,
+            }
+        }
+        peps = cls(**peps_parameters)
+        if spin_orientation == "up":
+            state = np.array([1., 0.])
+        elif spin_orientation == "down":
+            state = np.array([0., 1.])
+        elif spin_orientation == "right":
+            state = np.array([1., 1.]) / np.sqrt(2)
+        elif spin_orientation == "left":
+            state = np.array([1., -1.]) / np.sqrt(2)
+        else:
+            raise ValueError(f"choose spin orientation \"up\", \"down\", \"right\" or \"left\".")
+        from ......matrix_decompositions import qr_positive
+        from .....c_mps import MPS
+        from .....d_expectation_values import get_flipped_Cs
+        def get_product_AR(d, Drd, Dru, Dld, Dlu, state):
+            assert Drd <= D_max and Dru <= D_max and Dld <= D_max and Dlu <= D_max
+            assert d * Drd * Dru >= Dld * Dlu
+            AR = np.zeros((d, Dru, Drd, Dld, Dlu))
+            AR[:, 0, 0, 0, 0] = state
+            return AR
+        def get_random_AR(d, Drd, Dru, Dld, Dlu):
+            assert Drd <= D_max and Dru <= D_max and Dld <= D_max and Dlu <= D_max
+            assert d * Drd * Dru >= Dld * Dlu
+            AR, _ = qr_positive(np.random.normal(size=(d * Dru * Drd, Dld * Dlu)))
+            AR = np.reshape(AR, (d, Dru, Drd, Dld, Dlu))
+            return AR
+        def get_perturbed_product_AR(d, Drd, Dru, Dld, Dlu, state, eps):
+            AR_product = get_product_AR(d, Drd, Dru, Dld, Dlu, state)
+            AR_random = get_random_AR(d, Drd, Dru, Dld, Dlu)
+            AR_perturbed_product = (1-eps) * AR_product + eps * AR_random
+            AR_perturbed_product = np.reshape(AR_perturbed_product, (d * Dru * Drd, Dld * Dlu))
+            AR_perturbed_product, _ = qr_positive(AR_perturbed_product)
+            AR_perturbed_product = np.reshape(AR_perturbed_product, (d, Dru, Drd, Dld, Dlu))
+            return AR_perturbed_product
+        d = 2
+        # right isometric tensors
+        ARs_list = []
+        Drs = [1] * (2*Ly-1)
+        for x in range(Lx):
+            # p=1 column
+            AR2s = []
+            for y in range(Ly-1):
+                Drd, Dru = Drs[2*y], Drs[2*y+1]
+                Dld, Dlu = utility.split_dims(d * Drd * Dru, D_max)
+                AR2s.append(get_perturbed_product_AR(d, Drd, Dru, Dld, Dlu, state, eps))
+                Drs[2*y], Drs[2*y+1] = Dld, Dlu
+            Drd = Drs[2*Ly-2]
+            Dld = min(Drd * d, D_max)
+            AR2s.append(get_perturbed_product_AR(d, Drd, 1, Dld, 1, state, eps))
+            Drs[2*Ly-2] = Dld
+            # p=0 column
+            AR1s = []
+            Dru = Drs[0]
+            Dlu = min(Dru * d, D_max)
+            AR1s.append(get_perturbed_product_AR(d, 1, Dru, 1, Dlu, state, eps))
+            Drs[0] = Dlu
+            for y in range(1, Ly):
+                Drd, Dru = Drs[2*y-1], Drs[2*y]
+                Dld, Dlu = utility.split_dims(d * Drd * Dru, D_max)
+                AR1s.append(get_perturbed_product_AR(d, Drd, Dru, Dld, Dlu, state, eps))
+                Drs[2*y-1], Drs[2*y] = Dld, Dlu
+            # whole column
+            ARs = []
+            for y in range(Ly):
+                ARs.append(AR1s[y])
+                ARs.append(AR2s[y])
+            ARs_list.append(ARs)
+        Ts = []
+        for ARs in ARs_list[::-1]:
+            Ts.extend(ARs)
+        peps.Ts = Ts
+        # orthogonality column
+        Ds = [(1, Dr) for Dr in Drs]
+        Cs = get_flipped_Cs(MPS.from_perturbed_up_isometries(Ds[::-1], chi_max, eps).Ms)
+        peps.Ws = [np.transpose(C.copy(), (1, 3, 2, 0)) for C in Cs]
+        peps.ortho_surface, peps.ortho_center = -1, 2*Ly-2
+        return peps   
     
     def get_ARs(self, nx):
         """Return the Ly right orthonormal tensors Ts of bond column nx in {0, ..., 2Lx}. Bond 
