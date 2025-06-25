@@ -336,7 +336,7 @@ def split_matrix_svd(A, chi):
     Parameters
     ----------
     A : np.ndarray of shape (n, m)
-        the matrix to be split.
+        the normalized matrix to be split.
     chi : int
         split dimension. should be >= 1.
 
@@ -347,6 +347,8 @@ def split_matrix_svd(A, chi):
     C : np.ndarray of shape (chi, m)
         second factor of the split. A \approx B@C.
     """
+    norm = np.linalg.norm(A)
+    assert np.isclose(norm, 1., atol=1.e-8), "the matrix must be normalized."
     n, m = A.shape
     assert 1 <= chi <= n, f"for ({n} x {m}) matrix, chi must be between 1 and {n}."
     if chi >= min(n, m):
@@ -362,8 +364,10 @@ def split_matrix_svd(A, chi):
     B, S, V = B[:, piv], S[piv], V[piv, :]
     # Renormalize
     S /= np.linalg.norm(S)
+    # Isometrize B
+    B, R = np.linalg.qr(B)
     # Absorb R and S into V to form C
-    C = np.diag(S) @ V
+    C = R @ np.diag(S) @ V
     return B, C
 
 def split_matrix_iterate_QR(A, chi, N_iters, eps=1e-9, C0=None, smart_initial_condition=True, normalize=True, log_iterates=False):
