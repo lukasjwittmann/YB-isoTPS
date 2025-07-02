@@ -647,7 +647,6 @@ def hdf_dict_to_python_dict(d):
     -------
     result : dict
         resulting python dictionary
-    """
     d = dict(d)
     for key, value in d.items():
         if isinstance(value, hdfdict.hdfdict.LazyHdfDict):
@@ -655,9 +654,12 @@ def hdf_dict_to_python_dict(d):
         elif isinstance(value, bytes):
             d[key] = value.decode()
     return d
+    """
 
 def load_dict_from_file(filename):
+    """
     return hdf_dict_to_python_dict(hdfdict.load(filename))
+    """
 
 def turn_lists_to_dicts(d):
     """

@@ -270,8 +270,8 @@ def expectation_value_twosite(T1, T2, Wm1, W, Wp1, op):
 
 
 def get_column_expectation_value(ALs, ARs, Cs, hs):
-    """For orthogonality column tensors Cs between left and right orthonormal site tensors ALs and 
-    ARs, compute the expectation value of the mpo hs without compression.
+    """For orthogonality column tensors Cs between left and right isometric site tensors ALs and ARs, 
+    compute the expectation value of the mpo hs.
     
     e = <(AL)(h)(AL*)|(C)(C*)|(AR)(h)(AR*)>.
 
@@ -293,25 +293,25 @@ def get_column_expectation_value(ALs, ARs, Cs, hs):
     """
     assert len(ALs) == len(ARs) == (len(Cs)+1)//2 == len(hs)//2
     assert np.shape(ALs[0])[1] == np.shape(ALs[0])[3] \
-            == np.shape(hs[0])[0] == np.shape(Cs[0])[0] == 1
+           == np.shape(hs[0])[0] == np.shape(Cs[0])[0] == 1
     AL = ALs[0][:, 0, :, 0, :]
     h = hs[0][0, :, :, :]
     C = Cs[0][0, :, :, :]
     DP = oe.contract("abc,dea,ebf,cgh,fij->gdihj", \
-                    AL, h, np.conj(AL), C, np.conj(C))
+                     AL, h, np.conj(AL), C, np.conj(C))
     assert np.shape(ARs[-1])[2] == np.shape(ARs[-1])[4] \
-            == np.shape(hs[-1])[1] == np.shape(Cs[-1])[3] == 1
+           == np.shape(hs[-1])[1] == np.shape(Cs[-1])[3] == 1
     AR = ARs[-1][:, :, 0, :, 0] 
     h = hs[-1][:, 0, :, :]
     UP = oe.contract("abc,dea,ebf->cdf", \
-                    AR, h, np.conj(AR))
+                     AR, h, np.conj(AR))
     for n in range(len(ALs)-1):
         DP = oe.contract("abcde,fghai,bjkf,kghcl,dmin,eolp->mjonp", \
-                        DP, ARs[n], hs[(2*n)+1], np.conj(ARs[n]), \
-                        Cs[(2*n)+1], np.conj(Cs[(2*n)+1]))
+                         DP, ARs[n], hs[(2*n)+1], np.conj(ARs[n]), \
+                         Cs[(2*n)+1], np.conj(Cs[(2*n)+1]))
         DP = oe.contract("abcde,fghai,bjkf,kghcl,dimn,elop->mjonp", \
-                        DP, ALs[n+1], hs[2*(n+1)], np.conj(ALs[n+1]), \
-                        Cs[2*(n+1)], np.conj(Cs[2*(n+1)]))
+                         DP, ALs[n+1], hs[2*(n+1)], np.conj(ALs[n+1]), \
+                         Cs[2*(n+1)], np.conj(Cs[2*(n+1)]))
     e = oe.contract("abcde,abc->de", \
                     DP, UP)
     assert np.shape(e) == (1, 1)
@@ -320,8 +320,8 @@ def get_column_expectation_value(ALs, ARs, Cs, hs):
 
 
 def get_column_expectation_value_side(A1s, A2s, Cs, hs):
-    """For orthogonality column tensors Cs right/left of left/right orthonormal site tensors A1s, 
-    A2s, compute the expectation value of the mpo hs without compression.
+    """For orthogonality column tensors Cs right of left isometric site tensors A1s, A2s, compute 
+    the expectation value of the mpo hs.
     
     e = <(A1A2)(h)(A1A2*)|(C)(C*)>.
 

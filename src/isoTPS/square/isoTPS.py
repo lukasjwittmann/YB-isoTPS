@@ -1191,6 +1191,7 @@ class isoTPS_Square(isoTPS.isoTPS):
             "D_max": D_max,
             "chi_max": chi_max,
             "d": 2,
+            "ordering_mode": "center",
             "yb_options" : { 
                 "mode" : "svd",
                 "disentangle": True,
@@ -1242,6 +1243,7 @@ class isoTPS_Square(isoTPS.isoTPS):
             "D_max": D_max,
             "chi_max": chi_max,
             "d": d,
+            "ordering_mode": "center",
             "yb_options" : { 
                 "mode" : "svd",
                 "disentangle": True,
@@ -1308,6 +1310,8 @@ class isoTPS_Square(isoTPS.isoTPS):
         Cs = get_flipped_Cs(MPS.from_random_up_isometries(Ds[::-1], chi_max).Ms)
         peps.Ws = [np.transpose(C.copy(), (1, 3, 2, 0)) for C in Cs]
         peps.ortho_surface, peps.ortho_center = -1, 2*Ly-2
+        assert peps.check_isometry_condition()
+        assert peps.check_leg_dimensions()
         return peps
     
     @classmethod
@@ -1326,6 +1330,7 @@ class isoTPS_Square(isoTPS.isoTPS):
             "D_max": D_max,
             "chi_max": chi_max,
             "d": 2,
+            "ordering_mode": "center",
             "yb_options" : { 
                 "mode" : "svd",
                 "disentangle": True,
@@ -1417,11 +1422,13 @@ class isoTPS_Square(isoTPS.isoTPS):
         Cs = get_flipped_Cs(MPS.from_perturbed_up_isometries(Ds[::-1], chi_max, eps).Ms)
         peps.Ws = [np.transpose(C.copy(), (1, 3, 2, 0)) for C in Cs]
         peps.ortho_surface, peps.ortho_center = -1, 2*Ly-2
+        assert peps.check_isometry_condition()
+        assert peps.check_leg_dimensions()
         return peps   
     
     def get_ARs(self, nx):
-        """Return the Ly right orthonormal tensors Ts of bond column nx in {0, ..., 2Lx}. Bond 
-        column 0 is left of the whole lattice, corresponding to ortho_surface=-1."""
+        """Return the Ly right isometric tensors Ts of bond column nx in {0, ..., 2Lx}. Bond column 
+        0 is left of the whole lattice, corresponding to ortho_surface=-1."""
         bx = nx - 1
         if self.ortho_surface > bx:
             raise ValueError(f"Orthogonality column at {self.ortho_surface+1} is right of {nx}.")
@@ -1436,7 +1443,7 @@ class isoTPS_Square(isoTPS.isoTPS):
         return ARs
     
     def get_ALs(self, nx):
-        """Return the Ly left orthonormal tensors Ts of bond column nx in {0, ..., 2Lx}. Bond 
+        """Return the Ly left isometric tensors Ts of bond column nx in {0, ..., 2Lx}. Bond 
         column 0 is left of the whole lattice, corresponding to ortho_surface=-1."""
         bx = nx - 1
         if self.ortho_surface < bx:
@@ -1462,11 +1469,11 @@ class isoTPS_Square(isoTPS.isoTPS):
             Cs.append(np.transpose(self.Ws[y].copy(), (3, 0, 2, 1)))  # l u r d -> d l r u
         return Cs
     
-    def move_orthogonality_column_to(self, nx_center, min_dims=False):
-        """Move the orthogonality column to nx_center in {0, ..., 2Lx}. Orthogonality column 0 is 
-        left of the whole lattice, corresponding to ortho_surface=-1. Perform yang-baxter moves 
-        up/down on even/odd orthogonality columns and end up with orthogonality center down/up for
-        nx_center even/odd."""
+    def move_orthogonality_column_to(self, nx_center, min_dims=True):
+        """Move the orthogonality column to nx_center in {0, ..., 2Lx} (orthogonality column 0 is 
+        left of the whole lattice, corresponding to ortho_surface=-1). Perform yang-baxter moves 
+        down/up on even/odd orthogonality columns to end up with orthogonality center bottom/top 
+        on new orthogonality column odd/even."""
         bx_center = nx_center - 1
         bx = self.ortho_surface
         if bx < bx_center:
