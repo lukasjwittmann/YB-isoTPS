@@ -861,17 +861,18 @@ class isoTPS_Square(isoTPS.isoTPS):
         for i in range(len(ops)):
             result.append([])
         for x in range(self.Lx):
-            self.move_to(2*x, 0, min_dims)
-            T, W, Wp1 = self.get_environment_onesite(left_environment=True)
+            psi = self.copy()
+            psi.move_to(2*x, 0, min_dims)
+            T, W, Wp1 = psi.get_environment_onesite(left_environment=True)
             for i, op in enumerate(ops):
                 result[i].append(expectation_values.expectation_value_onesite(T, W, Wp1, op))
             left_environment = False
             for y in range(2*self.Ly - 1):
-                T, W, Wp1 = self.get_environment_onesite(left_environment=left_environment)
+                T, W, Wp1 = psi.get_environment_onesite(left_environment=left_environment)
                 for i, op in enumerate(ops):
                     result[i].append(expectation_values.expectation_value_onesite(T, W, Wp1, op))
                 left_environment = not left_environment
-                self.move_ortho_center_up(min_dims)
+                psi.move_ortho_center_up(min_dims)
         return np.real_if_close(result)
 
     def compute_expectation_values_twosite(self, ops, min_dims=False):
@@ -1216,9 +1217,16 @@ class isoTPS_Square(isoTPS.isoTPS):
             state = np.array([1., 1.]) / np.sqrt(2)
         elif spin_orientation == "left":
             state = np.array([1., -1.]) / np.sqrt(2)
+        elif spin_orientation == "right_y":
+            state = np.array([1., 1.j]) / np.sqrt(2)
+        elif spin_orientation == "left_y":
+            state = np.array([1., -1.j]) / np.sqrt(2)
+        elif spin_orientation == "random":
+            state = np.random.randn(2) + 1.j * np.random.randn(2)
+            state /= np.linalg.norm(state)
         else:
             raise ValueError(f"choose spin orientation \"up\", \"down\", \"right\" or \"left\".")
-        A = np.zeros(shape=(2, 1, 1, 1, 1))
+        A = np.zeros(shape=(2, 1, 1, 1, 1), dtype=complex)
         A[:, 0, 0, 0, 0] = state
         peps.Ts = [A] * (2 * peps.Lx * peps.Ly)
         C = np.ones(shape=(1, 1, 1, 1))
@@ -1389,7 +1397,7 @@ class isoTPS_Square(isoTPS.isoTPS):
             AR2s = []
             for y in range(Ly-1):
                 Drd, Dru = Drs[2*y], Drs[2*y+1]
-                Dld, Dlu = utility.split_dims(d * Drd * Dru, D_max)
+                Dlu, Dld = utility.split_dims(d * Drd * Dru, D_max)
                 AR2s.append(get_perturbed_product_AR(d, Drd, Dru, Dld, Dlu, state, eps))
                 Drs[2*y], Drs[2*y+1] = Dld, Dlu
             Drd = Drs[2*Ly-2]
@@ -1404,7 +1412,7 @@ class isoTPS_Square(isoTPS.isoTPS):
             Drs[0] = Dlu
             for y in range(1, Ly):
                 Drd, Dru = Drs[2*y-1], Drs[2*y]
-                Dld, Dlu = utility.split_dims(d * Drd * Dru, D_max)
+                Dlu, Dld = utility.split_dims(d * Drd * Dru, D_max)
                 AR1s.append(get_perturbed_product_AR(d, Drd, Dru, Dld, Dlu, state, eps))
                 Drs[2*y-1], Drs[2*y] = Dld, Dlu
             # whole column
@@ -1469,7 +1477,7 @@ class isoTPS_Square(isoTPS.isoTPS):
             Cs.append(np.transpose(self.Ws[y].copy(), (3, 0, 2, 1)))  # l u r d -> d l r u
         return Cs
     
-    def move_orthogonality_column_to(self, nx_center, min_dims=True):
+    def move_orthogonality_column_to(self, nx_center, min_dims=True, ny_center=None):
         """Move the orthogonality column to nx_center in {0, ..., 2Lx} (orthogonality column 0 is 
         left of the whole lattice, corresponding to ortho_surface=-1). Perform yang-baxter moves 
         down/up on even/odd orthogonality columns to end up with orthogonality center bottom/top 
@@ -1489,10 +1497,13 @@ class isoTPS_Square(isoTPS.isoTPS):
                 elif b%2 == 0:
                     self.move_ortho_surface_left(min_dims, force=True, move_upwards=True)
         assert self.ortho_surface == bx_center
-        if bx_center%2 == 1:
-            self.move_ortho_center_to(2*self.Ly-2, min_dims)
-        elif bx_center%2 == 0:
-            self.move_ortho_center_to(0, min_dims)
+        if ny_center == None:
+            if bx_center%2 == 1:
+                self.move_ortho_center_to(2*self.Ly-2, min_dims)
+            elif bx_center%2 == 0:
+                self.move_ortho_center_to(0, min_dims)
+        else:
+            self.move_ortho_center_to(ny_center, min_dims)
         return
 
     def get_column_expectation_values(self, h_mpos, min_dims=True):
