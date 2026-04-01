@@ -408,6 +408,10 @@ class isoTPS_Square(isoTPS.isoTPS):
             self.ortho_center = W2_index
         if arrows_should_point_up == False and W2_index is not None:
             self.move_ortho_center_down(min_dims)
+        """
+        if error > 1.e-14:
+            print(error)
+        """
         return error
 
     def move_ortho_surface_left(self, min_dims=False, force=False, move_upwards=True):
@@ -873,6 +877,29 @@ class isoTPS_Square(isoTPS.isoTPS):
                     result[i].append(expectation_values.expectation_value_onesite(T, W, Wp1, op))
                 left_environment = not left_environment
                 psi.move_ortho_center_up(min_dims)
+        return np.real_if_close(result)
+    
+    def compute_expectation_values_onesite_col(self, ops, min_dims=False):
+        result = []
+        for i in range(len(ops)):
+            result.append([])
+        for x in range(self.Lx):
+            if x < self.Lx // 2 or x > self.Lx // 2:
+                for y in range(2*self.Ly):
+                    result[i].append(0.)
+            else:
+                psi = self.copy()
+                psi.move_to(2*x, 0, min_dims)
+                T, W, Wp1 = psi.get_environment_onesite(left_environment=True)
+                for i, op in enumerate(ops):
+                    result[i].append(expectation_values.expectation_value_onesite(T, W, Wp1, op))
+                left_environment = False
+                for y in range(2*self.Ly - 1):
+                    T, W, Wp1 = psi.get_environment_onesite(left_environment=left_environment)
+                    for i, op in enumerate(ops):
+                        result[i].append(expectation_values.expectation_value_onesite(T, W, Wp1, op))
+                    left_environment = not left_environment
+                    psi.move_ortho_center_up(min_dims)
         return np.real_if_close(result)
 
     def compute_expectation_values_twosite(self, ops, min_dims=False):
@@ -1433,6 +1460,113 @@ class isoTPS_Square(isoTPS.isoTPS):
         assert peps.check_isometry_condition()
         assert peps.check_leg_dimensions()
         return peps   
+    
+    @classmethod
+    def from_generalized_W_state(cls, Lx, Ly, cs, D_max=2, chi_max_c=2):
+        """Initialize the W-state with site dependent coefficients:
+        -> |psi> = sum_{nx,y} cs[nx][y]|0...0 1_{nx,y} 0...0>.
+        """
+        # initialize instance
+        peps_parameters = {
+            "Lx": Lx,
+            "Ly": Ly,
+            "D_max": D_max,
+            "chi_max": chi_max_c,
+            "d": 2,
+            "ordering_mode": "center",
+            "yb_options" : { 
+                "mode" : "svd",
+                "disentangle": True,
+                "disentangle_options": {
+                    "mode": "renyi_approx",
+                    "renyi_alpha": 0.5,
+                    "method": "trm",
+                    "N_iters": 100,
+                }
+            },
+            "tebd_options": {
+                "mode" : "iterate_polar",
+                "N_iters": 100,
+            }
+        }
+        peps = cls(**peps_parameters)
+        # compute tensors
+        assert np.abs(np.sum(np.abs(np.array(cs))**2) - 1.) < 1.e-10 # normalization
+        As = [[None] * Ly for _ in range(2*Lx)]
+        Cs = [None] * (2*Ly-1)
+        p_top = 0.
+        for y in reversed(range(Ly)):
+            # ALs
+            p_left = 0.
+            for nx in range(Lx):
+                c = cs[nx][y]
+                if nx == 0:
+                    AL = np.zeros((2, 1, 1, 1, 2), dtype=complex)
+                    AL[0, 0, 0, 0, 0] = 1.
+                    AL[1, 0, 0, 0, 1] = c / np.sqrt(p_left + np.abs(c)**2)
+                else:
+                    AL = np.zeros((2, 1, 2, 1, 2), dtype=complex)
+                    AL[0, 0, 0, 0, 0] = 1.
+                    AL[0, 0, 1, 0, 1] = np.sqrt(p_left / (p_left + np.abs(c)**2))
+                    AL[1, 0, 0, 0, 1] = c / np.sqrt(p_left + np.abs(c)**2)
+                if nx%2 == 1:
+                    AL = np.transpose(AL, (0, 2, 1, 4, 3))
+                As[nx][y] = AL.copy()
+                p_left += np.abs(c)**2
+            # ARs
+            p_right = 0.
+            for nx in reversed(range(Lx, 2*Lx)):
+                c = cs[nx][y]
+                if nx == 2*Lx-1:
+                    AR = np.zeros((2, 1, 1, 1, 2), dtype=complex)
+                    AR[0, 0, 0, 0, 0] = 1.
+                    AR[1, 0, 0, 0, 1] = c / np.sqrt(p_right + np.abs(c)**2)
+                else:
+                    AR = np.zeros((2, 1, 2, 1, 2), dtype=complex)
+                    AR[0, 0, 0, 0, 0] = 1.
+                    AR[0, 0, 1, 0, 1] = np.sqrt(p_right / (p_right + np.abs(c)**2))
+                    AR[1, 0, 0, 0, 1] = c / np.sqrt(p_right + np.abs(c)**2)
+                if nx%2 == 1:
+                    AR = np.transpose(AR, (0, 2, 1, 4, 3))
+                As[nx][y] = np.transpose(AR.copy(), (0, 3, 4, 1, 2))
+                p_right += np.abs(c)**2
+            # Cs
+            if y > 0:
+                # C1
+                if y == Ly-1:
+                    C1 = np.zeros((2, 2, 2, 1), dtype=complex)
+                    C1[0, 0, 0, 0] = 1.
+                    C1[1, 1, 0, 0] = np.sqrt(p_left / (p_left + p_right))
+                    C1[1, 0, 1, 0] = np.sqrt(p_right / (p_left + p_right))
+                else:
+                    C1 = np.zeros((2, 2, 2, 2), dtype=complex)
+                    C1[0, 0, 0, 0] = 1.
+                    C1[1, 0, 0, 1] = np.sqrt(p_top / (p_top + p_left + p_right))
+                    C1[1, 1, 0, 0] = np.sqrt(p_left / (p_top + p_left + p_right))
+                    C1[1, 0, 1, 0] = np.sqrt(p_right / (p_top + p_left + p_right))
+                Cs[2*y] = C1.copy()
+                # C2 
+                C2 = np.zeros((2, 1, 1, 2), dtype=complex)
+                C2[:, 0, 0, :] = np.eye(2)
+                Cs[2*y-1] = C2.copy()
+                p_top += p_left + p_right
+            elif y == 0:
+                C = np.zeros((1, 2, 2, 2), dtype=complex)
+                C[0, 0, 0, 1] = np.sqrt(p_top)
+                C[0, 1, 0, 0] = np.sqrt(p_left)
+                C[0, 0, 1, 0] = np.sqrt(p_right)
+                Cs[0] = C.copy()
+        # initialize tensors and check validity
+        Ts = [None] * (2*Lx*Ly)
+        for nx in range(2*Lx):
+            for y in range(Ly):
+                Ts[peps.get_index(nx//2, y, nx%2)] = np.transpose(As[nx][y], (0, 4, 3, 1, 2))
+        peps.Ts = Ts
+        peps.Ws = [np.transpose(C.copy(), (1, 3, 2, 0)) for C in Cs]
+        peps.ortho_surface, peps.ortho_center = Lx-1, 0
+        assert peps.check_isometry_condition()
+        assert peps.check_leg_dimensions()
+        return peps 
     
     def get_ARs(self, nx):
         """Return the Ly right isometric tensors Ts of bond column nx in {0, ..., 2Lx}. Bond column 
